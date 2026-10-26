@@ -96,7 +96,7 @@ export function BookingPanel({ conv, act, version }: { conv: Conversation; act: 
     <div className={`panel manifest ${started ? 'started' : ''}`} data-testid="booking-panel">
       <div className="manifest-head">
         <div>
-          <span className="eyebrow">Live booking{conv.loadedFrom === 'link' ? ' · from a shared link' : conv.loadedFrom === 'history' ? ' · from your bookings' : conv.mode === 'file' ? ' · from your file' : ''}</span>
+          <span className="eyebrow">Live booking{conv.loadedFrom === 'link' ? ' · from a shared link' : conv.mode === 'file' ? ' · from your file' : ''}</span>
           <h2 className="mono" style={{ fontFamily: 'var(--f-mono)', fontSize: 18 }}>{b.id}</h2>
         </div>
         <div className="row">

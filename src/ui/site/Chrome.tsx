@@ -20,6 +20,9 @@ export function Loader() {
   );
 }
 
+/** Every city Garuda collects from or delivers to. */
+const CITIES = [...ALLOWED.originCity, ...ALLOWED.destCountry.flatMap(c => ALLOWED.destCities[c])];
+
 export interface NavLink { label: string; go: () => void }
 
 export function Header({ links, current, solid, onCta }: { links: NavLink[]; current: string; solid?: boolean; onCta: () => void }) {
@@ -51,13 +54,15 @@ export function Header({ links, current, solid, onCta }: { links: NavLink[]; cur
   return (
     <header className={`site-head ${solid ? 'solid' : ''}`} ref={ref} data-mode="dark">
       <div className="ticker" aria-label="Cities we serve">
-        <p className="cities">
-          <span className="cities-k">COLLECTION</span>
-          <span>{ALLOWED.originCity.join(' · ')}</span>
-          <span className="cities-sep" aria-hidden="true">→</span>
-          <span className="cities-k dest">DELIVERY</span>
-          <span className="cities-dest">{ALLOWED.destCountry.flatMap(c => ALLOWED.destCities[c]).join(' · ')}</span>
-        </p>
+        <div className="cities">
+          <div className="cities-run">
+            {[0, 1].map(k => (
+              <span key={k} className="cities-set" aria-hidden={k === 1 || undefined}>
+                {CITIES.map(c => <span key={c}>{c}</span>)}
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
       <div className="bar">
         <a className="wordmark" href="#top" aria-label="Garuda home" onClick={e => { e.preventDefault(); links[0]?.go(); }}>
@@ -73,10 +78,6 @@ export function Header({ links, current, solid, onCta }: { links: NavLink[]; cur
                 <li key={l.label}><button type="button" className={l.label === current ? 'cur' : ''} aria-current={l.label === current ? 'page' : undefined} onClick={() => { setOpen(false); l.go(); }}>{l.label}</button></li>
               ))}
             </ul>
-            <div className="menu-foot">
-              <span className="mono-s">RUNS IN YOUR BROWSER:</span>
-              <span>No login · No API key · No backend</span>
-            </div>
           </nav>
         </div>
         <button type="button" className="pill-btn solid head-cta" onClick={onCta}><span>BOOK A SHIPMENT</span></button>

@@ -26,13 +26,12 @@ export function Hero({ onChat, onFile }: { onChat: () => void; onFile: () => voi
         <div className="hero-stars" aria-hidden="true" />
         <div className="hero-globe"><Globe /></div>
         <div className="hero-copy">
-          <p className="h6 hero-kicker">PRE-FLIGHT CHECKER</p>
           <h1 className="h1" id="hero-title">
             <span className="line"><span>CATCH IT</span></span>
             <span className="line"><span>BEFORE IT</span></span>
             <span className="line"><span>SHIPS</span></span>
           </h1>
-          <p className="hero-sub">Book UK → Germany, France and Netherlands road freight by chat, or drop in a file. Every booking checked against the 10-rule rulebook, under one accountable console.</p>
+          <p className="hero-sub">Book UK → Germany, France and Netherlands road freight by chat, or drop in a file.</p>
           <div className="hero-btns">
             <PillBtn solid onClick={onChat}>BOOK BY CHAT</PillBtn>
             <PillBtn onClick={onFile}>CHECK A FILE</PillBtn>
@@ -71,7 +70,7 @@ export function Intro({ onRules }: { onRules: () => void }) {
           <div className="stats-list">
             <div className="stat-row"><b className="h0"><Counter to={10} /></b><span>Rulebook checks on every booking</span></div>
             <div className="stat-row"><b className="h0"><Counter to={3} /></b><span>Carriers compared per route</span></div>
-            <div className="stat-row"><b className="h0"><Counter to={0} /></b><span>Logins, API keys or backends</span></div>
+            <div className="stat-row"><b className="h0"><Counter to={ALLOWED.originCity.length + ALLOWED.destCountry.reduce((n, c) => n + ALLOWED.destCities[c].length, 0)} /></b><span>Cities served across the UK, Germany, France and the Netherlands</span></div>
           </div>
         </div>
       </div>
@@ -108,33 +107,11 @@ function Interchange() {
   );
 }
 
-/* ---------------- cases (follow the plane) ---------------- */
-const CASES: Array<{ id: string; seller: string; route: string; status: 'Red' | 'Amber'; rules: string; text: string }> = [
-  { id: 'BK-103', seller: 'Harbour Tech Ltd', route: 'London → Amsterdam', status: 'Red', rules: 'R-06 · R-08', text: 'Power banks were hiding in the item list. Lithium batteries can’t travel with these road carriers, and the Amsterdam warehouse had no delivery slot booked. Both flagged before collection, with the fix one click away.' },
-  { id: 'BK-102', seller: 'Bright Wick Candles', route: 'Leeds → Lyon', status: 'Red', rules: 'R-01 · R-02', text: 'The declared value didn’t add up to quantity × unit price, and one HS code was too short for customs. Garuda proposed the corrected total and a valid 6-digit code, and the booking went green.' },
-  { id: 'BK-105', seller: 'Midland Ceramics', route: 'Birmingham → Paris', status: 'Red', rules: 'R-05', text: '1,700 kg on two pallets is 850 kg a pallet, more than any carrier on the lane will take. Garuda showed how many pallets each carrier would need instead of letting the truck turn up and refuse the load.' },
-];
-
+/* ---------------- cases (the plane flies over this heading) ---------------- */
 export function Cases() {
   return (
     <section className="cases" data-header="light" id="cases">
-      <div className="cases-head">
-        <h2 className="h1 two-tone"><span>CAUGHT BEFORE</span> <span className="mute">IT SHIPPED</span></h2>
-        <p className="cases-sub">From the sample file: real mistakes the checker catches on the way in, before they become customs holds or refused pallets.</p>
-      </div>
-      {CASES.map(c => (
-        <article className="case" key={c.id}>
-          <div className="case-l">
-            <div className={`case-tile ${c.status}`}>
-              <span className="mono-s">{c.id}</span>
-              <b>{c.status === 'Red' ? 'HOLD' : 'CHECK'}</b>
-              <span className="mono-s">{c.rules}</span>
-            </div>
-            <div className="case-who"><b>{c.seller.toUpperCase()}</b><span>{c.route}</span><span>Sample booking</span></div>
-          </div>
-          <p className="case-text">{c.text}</p>
-        </article>
-      ))}
+      <h2 className="h1 two-tone"><span>CAUGHT BEFORE</span> <span className="mute">IT SHIPPED</span></h2>
     </section>
   );
 }
@@ -272,7 +249,7 @@ export function Footer({ links, current, onChat, cta = true }: { links: Array<{ 
           <div className="marquee-run">{[...MARQUEE, ...MARQUEE].map((m, i) => <span key={i}>{m}<i>·</i></span>)}</div>
         </div>
         <div className="foot-legal mono-s">
-          <span>© {new Date().getFullYear()} GARUDA · PRE-FLIGHT SHIPMENT CHECKER</span>
+          <span>© {new Date().getFullYear()} GARUDA · UK → EU ROAD FREIGHT</span>
           <span>OPS HACKATHON · CASE 2</span>
         </div>
         <div className="foot-word" aria-hidden="true">GARUDA</div>

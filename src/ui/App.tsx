@@ -16,10 +16,6 @@ import { FileView } from './FileView';
 import type { FileActions, FileState } from './FileView';
 import { RulesView } from './RulesView';
 import { InsightsView } from './InsightsView';
-import { BookingsView } from './BookingsView';
-import type { BookingsActions } from './BookingsView';
-import { entryFor, loadHistory, recordBooking, removeBooking } from '../io/history';
-import type { SavedBooking } from '../io/history';
 import { InvoiceModal } from './components/InvoiceModal';
 import { PrintModal } from './components/PrintModal';
 import { copyText, safeStorage, toast } from './util';
@@ -29,20 +25,20 @@ import { JourneyLoad, JourneySea, JourneySky } from './site/Journey';
 import { initSmoothScroll, reducedMotion, scrollToEl } from './site/motion';
 import './site/site.css';
 
-type View = 'chat' | 'file' | 'bookings' | 'insights' | 'rules';
+type View = 'chat' | 'file' | 'insights' | 'rules';
 type Page = 'home' | 'book';
-type Section = 'book' | 'bookings' | 'insights' | 'rules';
+type Section = 'book' | 'insights' | 'rules';
 /** Top-level sections of the booking page; "Book a shipment" holds the two ways to book (chat or file). */
-const SECTIONS: Array<[Section, string]> = [['book', 'Book a shipment'], ['bookings', 'My bookings'], ['insights', 'Insights'], ['rules', 'Rules']];
+const SECTIONS: Array<[Section, string]> = [['book', 'Book a shipment'], ['insights', 'Insights'], ['rules', 'Rules']];
 const MODES: Array<[View, string, string]> = [['chat', 'Book by chat', 'Describe it in plain words'], ['file', 'Check a file', 'Upload a workbook or CSVs']];
 const sectionOf = (v: View): Section => (v === 'chat' || v === 'file' ? 'book' : v);
 const hash = () => (typeof location !== 'undefined' ? location.hash : '').slice(1);
 const viewFromHash = (): View => {
   const h = hash();
-  return h === 'file' || h === 'rules' || h === 'insights' || h === 'bookings' ? h : 'chat';
+  return h === 'file' || h === 'rules' || h === 'insights' ? h : 'chat';
 };
 /** Home is `/`; the booking page is any console view (#chat, #file, #insights, #rules) or a shared booking. */
-const pageFromHash = (): Page => (/^(chat|file|bookings|insights|rules)$/.test(hash()) || hash().startsWith(SHARE_PREFIX) ? 'book' : 'home');
+const pageFromHash = (): Page => (/^(chat|file|insights|rules)$/.test(hash()) || hash().startsWith(SHARE_PREFIX) ? 'book' : 'home');
 
 function fileStateFrom(read: ReadResult, name: string): FileState {
   const firstRed = read.bookings.find(b => check(b).status === 'Red') || read.bookings[0];
@@ -66,7 +62,6 @@ export function App() {
   const [fileLink, setFileLink] = useState<string | null>(null);
   const [invoice, setInvoice] = useState<{ booking: Booking; result: CheckResult } | null>(null);
   const [printing, setPrinting] = useState<{ result: CheckResult; reference: string | null } | null>(null);
-  const [pastBookings, setPastBookings] = useState<SavedBooking[]>(() => loadHistory(storage));
   /** Which way to book was used last, so "Book a shipment" reopens it. */
   const bookMode = useRef<View>(viewFromHash() === 'file' ? 'file' : 'chat');
 
@@ -127,7 +122,6 @@ export function App() {
   const links = [
     { label: 'Home', go: () => home() },
     { label: 'Book a shipment', go: () => show('chat') },
-    { label: 'My bookings', go: () => show('bookings') },
     { label: 'Check a file', go: () => show('file') },
     { label: 'Insights', go: () => show('insights') },
     { label: 'Rules', go: () => show('rules') },
@@ -160,10 +154,7 @@ export function App() {
       console.error(e);
       out = [{ kind: 'text', html: 'Something went wrong reading that. Try rephrasing, or edit the field in the booking panel.' }];
     }
-    if (out.some(m => m.kind === 'confirmation')) {
-      conv.setMemory(rememberBooking(storage, normalizeBooking(conv.toBooking())));
-      if (conv.confirmed) setPastBookings(recordBooking(storage, entryFor(conv.confirmed, conv.result(), conv.carrierOverride, 'chat')));
-    }
+    if (out.some(m => m.kind === 'confirmation')) conv.setMemory(rememberBooking(storage, normalizeBooking(conv.toBooking())));
     const entries: LogEntry[] = [];
     if (userText) entries.push({ id: nextId.current++, role: 'user', text: userText });
     out.forEach(msg => entries.push({ id: nextId.current++, role: 'bot', msg }));
@@ -276,7 +267,6 @@ export function App() {
       const ref = 'PF-' + fs.sel.replace(/\W/g, '') + '-' + Math.random().toString(36).slice(2, 6).toUpperCase();
       setFs(s => ({ ...s, confirmed: { ...s.confirmed, [fs.sel as string]: ref } }));
       conv.setMemory(rememberBooking(storage, r.booking));
-      setPastBookings(recordBooking(storage, entryFor(ref, r, fs.overrides[r.booking.id] || null, 'file')));
       toast('Booking confirmed');
     },
     fixInChat: id => {
@@ -302,25 +292,6 @@ export function App() {
     },
   };
 
-  const saved = (e: SavedBooking) => {
-    const booking = normalizeBooking(e.booking);
-    return { booking, result: check(booking, { carrierOverride: e.carrierOverride }) };
-  };
-  const bookings: BookingsActions = {
-    open: e => {
-      setFileLink(null);
-      const msgs = conv.loadBooking(normalizeBooking(e.booking), { carrierOverride: e.carrierOverride, confirmed: e.ref, source: 'history' });
-      setLog(msgs.map(msg => ({ id: nextId.current++, role: 'bot' as const, msg })));
-      setVersion(v => v + 1);
-      show('chat');
-    },
-    print: e => setPrinting({ result: saved(e).result, reference: e.ref }),
-    invoice: e => setInvoice(saved(e)),
-    share: e => share(saved(e).booking, e.carrierOverride),
-    remove: ref => { setPastBookings(removeBooking(storage, ref)); toast(`Removed ${ref} from your bookings`); },
-    newBooking: () => show('chat'),
-    checkFile: () => show('file'),
-  };
   const section = sectionOf(view);
 
   return (
@@ -338,7 +309,7 @@ export function App() {
           <Carriers />
           <RulesBand onAll={() => show('rules')} />
           <Faq onChat={() => show('chat')} />
-          <Footer links={links.slice(0, 6)} current="Home" onChat={() => show('chat')} />
+          <Footer links={links.slice(0, 5)} current="Home" onChat={() => show('chat')} />
         </>
       ) : (
         <>
@@ -355,7 +326,7 @@ export function App() {
                 {SECTIONS.map(([sec, label]) => (
                   <button key={sec} type="button" role="tab" id={`tab-${sec}`} aria-controls={`section-${sec}`} aria-selected={section === sec}
                     onClick={() => show(sec === 'book' ? bookMode.current : sec)}>
-                    {label}{sec === 'bookings' && pastBookings.length > 0 && <span className="tab-count">{pastBookings.length}</span>}
+                    {label}
                   </button>
                 ))}
               </nav>
@@ -376,9 +347,6 @@ export function App() {
                   <FileView fs={fs} results={results} act={file} />
                 </section>
               </section>
-              <section className="view" id="section-bookings" role="tabpanel" aria-labelledby="tab-bookings" hidden={view !== 'bookings'}>
-                <BookingsView history={pastBookings} act={bookings} />
-              </section>
               <section className="view" id="view-insights" role="tabpanel" aria-labelledby="tab-insights" hidden={view !== 'insights'}>
                 <InsightsView results={results} bookings={fs.bookings} overrides={fs.overrides} name={fs.name} onOpen={id => { file.select(id); show('file'); }} />
               </section>
@@ -387,7 +355,7 @@ export function App() {
               </section>
             </main>
           </section>
-          <Footer links={links.slice(0, 6)} current="Book a shipment" onChat={() => show('chat')} cta={false} />
+          <Footer links={links.slice(0, 5)} current="Book a shipment" onChat={() => show('chat')} cta={false} />
         </>
       )}
       <div className={`wipe ${wipe}`} aria-hidden="true" />

@@ -36,51 +36,6 @@ test('header lists the cities served, not the rulebook ticker', async ({ page })
   await expect(header).not.toContainText('ROAD FREIGHT');
 });
 
-test('confirmed bookings appear under My bookings, open in chat and can be removed', async ({ page }) => {
-  await page.goto('/#bookings');
-  await expect(page.getByTestId('bookings-empty')).toBeVisible();
-
-  // confirm one booking in chat
-  await page.getByRole('tab', { name: 'Book a shipment' }).click();
-  await page.getByRole('button', { name: /We're Northfield Goods/ }).click();
-  for (const t of ['691200', 'UK', "that's everything", '620', 'yes', 'confirm']) {
-    await page.getByLabel('Message').fill(t);
-    await page.getByLabel('Message').press('Enter');
-  }
-  const ref = (await page.getByTestId('chat-log').getByTestId('booking-ref').last().textContent()) || '';
-  expect(ref).toMatch(/^PF-/);
-
-  // and one from the sample file
-  await page.getByRole('tab', { name: 'Check a file' }).click();
-  await page.getByTestId('bookings-table').locator('tr[data-id="BK-101"]').click();
-  await page.getByTestId('booking-detail').getByRole('button', { name: 'Confirm booking' }).click();
-
-  await page.getByRole('tab', { name: 'My bookings' }).click();
-  const rows = page.getByTestId('bookings-history').locator('tbody tr');
-  await expect(rows).toHaveCount(2);
-  await expect(rows.first()).toContainText('from file');
-  await expect(page.locator(`tr[data-ref="${ref}"]`)).toContainText('Northfield Goods');
-
-  // survives a reload
-  await page.reload();
-  await expect(page.getByTestId('bookings-history').locator('tbody tr')).toHaveCount(2);
-
-  await page.getByLabel('Search bookings').fill('frankfurt');
-  await expect(page.getByTestId('bookings-history').locator('tbody tr')).toHaveCount(2);
-  await page.getByLabel('Search bookings').fill('nothing-like-this');
-  await expect(page.getByTestId('bookings-history')).toHaveCount(0);
-  await page.getByLabel('Search bookings').fill('');
-
-  await page.locator(`tr[data-ref="${ref}"]`).getByRole('button', { name: 'Open' }).click();
-  await expect(page.getByRole('tab', { name: 'Book by chat' })).toHaveAttribute('aria-selected', 'true');
-  await expect(page.getByTestId('chat-log')).toContainText('from your bookings');
-
-  await page.getByRole('tab', { name: 'My bookings' }).click();
-  await page.getByRole('button', { name: `Remove ${ref}` }).click();
-  await page.getByRole('button', { name: 'Confirm remove' }).click();
-  await expect(page.getByTestId('bookings-history').locator('tbody tr')).toHaveCount(1);
-});
-
 test('the upload view offers the sample file', async ({ page }) => {
   await page.goto('/#file');
   await expect(page.getByRole('button', { name: 'Use the sample file' })).toBeVisible();
