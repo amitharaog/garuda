@@ -1,0 +1,47 @@
+/* R-06: lithium batteries, aerosols and flammable liquids, detected from the item description. */
+
+/** Phrases that cancel a match ("battery-free", "non-flammable"). */
+const NEGATIONS =
+  /(battery[- ]?free|no batter(y|ies)|without batter(y|ies)|batter(y|ies) not included|non[- ]?flammable|non[- ]?aerosol|empty spray|refillable empty|alcohol[- ]?free)/gi;
+
+const DG = [
+  {
+    re: /lithium|li[- ]?ion|li[- ]?po(ly(mer)?)?\b|lipo\b|power ?bank|e[- ]?bike batter|18650|lifepo4/i,
+    cat: 'lithium battery',
+    why: 'Lithium batteries are a fire risk and are classed as dangerous goods (UN3480/UN3481).',
+  },
+  {
+    re: /aerosol|spray ?can|spray ?paint|hair ?spray|deodorant spray|body spray|dry shampoo|spray deodorant|pressuri[sz]ed can|compressed gas|butane|propane|gas canister/i,
+    cat: 'aerosol / pressurised gas',
+    why: 'Aerosols and pressurised cans can burst or ignite and are classed as dangerous goods (UN1950).',
+  },
+  {
+    re: /flammable|inflammable|petrol|gasoline|diesel|kerosene|paraffin|lighter fluid|lighter refill|white spirit|methylated|meths\b|turpentine|paint thinner|thinners?\b|acetone|nail polish|nail varnish|isopropyl|ethanol|methanol|solvent|perfume|eau de (parfum|toilette)|cologne|fragrance oil|hand sanitis|hand sanitiz|lamp oil|firelighter|fuel/i,
+    cat: 'flammable liquid',
+    why: 'This is normally classed as a flammable liquid (e.g. UN1263 / UN1266 / UN1993) and needs a dangerous-goods service.',
+  },
+] as const;
+
+export interface DGHit {
+  term: string;
+  cat: string;
+  why: string;
+}
+
+export function detectDG(text: string): DGHit | null {
+  const t = String(text || '');
+  if (!t) return null;
+  const cleaned = t.replace(NEGATIONS, ' ');
+  for (const g of DG) {
+    const m = cleaned.match(g.re);
+    if (m) return { term: m[0], cat: g.cat, why: g.why };
+  }
+  return null;
+}
+
+/** Softer signals that deserve a human check but do not break R-06 by themselves. */
+export function detectDGSoft(text: string): string | null {
+  const t = String(text || '').replace(NEGATIONS, ' ');
+  const m = t.match(/batter(y|ies)|rechargeable|cordless|wireless|bluetooth|\bspray\b|\boil\b|alcohol|vodka|whisky|gin\b|rum\b|ink\b|glue|adhesive/i);
+  return m ? m[0] : null;
+}
