@@ -40,6 +40,13 @@ export function App() {
   const [fileLink, setFileLink] = useState<string | null>(null);
   const [invoice, setInvoice] = useState<{ booking: Booking; result: CheckResult } | null>(null);
 
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => (document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'));
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem('pf-theme', next); } catch { /* storage blocked */ }
+  };
   const closeInvoice = useCallback(() => setInvoice(null), []);
   const results = useMemo(() => fs.bookings.map(b => check(b, { carrierOverride: fs.overrides[b.id] })), [fs.bookings, fs.overrides]);
 
@@ -172,8 +179,23 @@ export function App() {
               <button key={v} type="button" role="tab" id={`tab-${v}`} aria-controls={`view-${v}`} aria-selected={view === v} onClick={() => show(v)}>{label}</button>
             ))}
           </nav>
+          <button type="button" className="theme-toggle" onClick={toggleTheme} aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} title={theme === 'dark' ? 'Light mode' : 'Dark mode'}>
+            {theme === 'dark' ? '☀' : '☾'}
+          </button>
         </div>
       </header>
+      <section className="hero wrap" aria-labelledby="hero-title">
+        <span className="eyebrow">UK → Germany · France · Netherlands road freight</span>
+        <h2 className="hero-title" id="hero-title">Catch it <span>before</span> it ships.</h2>
+        <div className="hero-row">
+          <p className="hero-sub">Book by chat or drop in a file. Every booking is checked against the 10-rule rulebook, matched to the right carrier and confirmed in one place.</p>
+          <div className="hero-stats" aria-label="At a glance">
+            <div><b>10</b><span>Rulebook checks</span></div>
+            <div><b>3</b><span>Carriers compared</span></div>
+            <div><b>0</b><span>Logins or API keys</span></div>
+          </div>
+        </div>
+      </section>
       <main className="wrap">
         <section className="view" id="view-chat" role="tabpanel" aria-labelledby="tab-chat" hidden={view !== 'chat'}>
           <ChatView conv={conv} log={log} act={chat} version={version} />

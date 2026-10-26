@@ -6,6 +6,8 @@ Conversational shipment booking and pre-flight error checker for UK → Germany 
 - **Check a file:** upload the judges' workbook (Bookings + Items sheets) or two CSVs. Every booking is checked, fixed in one click, and exported as a corrected workbook and an issues report.
 - **Rules:** the rulebook, the extra checks, and how each rule is read.
 
+The look is dark-first (near-black surfaces, one electric blue `#0016CB` with glow, oversized Inter Tight headings) with a light mode behind the toggle in the header; the choice is remembered per browser.
+
 Everything runs in the browser. No login, no API key and no backend. The same input always gives the same result.
 
 ## Setup
