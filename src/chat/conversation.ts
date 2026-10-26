@@ -7,6 +7,8 @@ import {
 import type { Action, Booking, CheckResult, Item } from '../domain';
 import { EU_CITIES, UK_CITIES, findCountry, isItemKey, resolveItem, singular, understand } from './understand';
 import type { FieldSet, Pending } from './understand';
+import { allProducts, findSeller, lastBooking, matchProduct } from '../io/profiles';
+import type { Profiles } from '../io/profiles';
 
 export type BotMessage =
   | { kind: 'text'; html: string; chips?: string[]; hint?: string; ask?: boolean; confirmActions?: boolean }
@@ -14,7 +16,7 @@ export type BotMessage =
   | { kind: 'confirmation'; result: CheckResult; ref: string };
 
 export interface ChatItem extends Item {
-  _auto: { cartons?: boolean; sku?: boolean };
+  _auto: { cartons?: boolean; sku?: boolean; saved?: boolean };
   _asked: { hs?: boolean; origin?: boolean };
 }
 export interface ChatBooking extends Omit<Booking, 'items'> {
@@ -71,11 +73,15 @@ export class Conversation {
   history: string[] = [];
   itemsDone = false;
   mode: 'chat' | 'file' = 'chat';
+  /** Where an externally loaded booking came from. */
+  loadedFrom: 'file' | 'link' | null = null;
   lastResult: CheckResult | null = null;
   reviewed = false;
   private suggest: { code: string; item: number } | null = null;
   private estimate: number | null = null;
   private apptAsked = false;
+  /** Sellers and products remembered from earlier confirmed bookings in this browser. */
+  private memory: Profiles = {};
 
   constructor() {
     this.reset();
@@ -91,6 +97,7 @@ export class Conversation {
     this.history = [];
     this.itemsDone = false;
     this.mode = 'chat';
+    this.loadedFrom = null;
     this.lastResult = null;
     this.reviewed = false;
     this.suggest = null;
@@ -117,20 +124,21 @@ export class Conversation {
   }
 
   /** Load a booking from an uploaded file so it can be fixed in chat. Values are kept exactly as written. */
-  loadBooking(b: Booking, opts: { carrierOverride?: string | null; confirmed?: string | null } = {}): BotMessage[] {
+  loadBooking(b: Booking, opts: { carrierOverride?: string | null; confirmed?: string | null; source?: 'file' | 'link' } = {}): BotMessage[] {
     this.reset();
     const copy = JSON.parse(JSON.stringify(b)) as Booking;
     this.b = { ...copy, items: copy.items.map(it => asChatItem(it)) };
     this.stated = { cartons: true, declaredValue: true };
     this.itemsDone = true;
     this.mode = 'file';
+    this.loadedFrom = opts.source || 'file';
     this.reviewed = true;
     this.carrierOverride = opts.carrierOverride || null;
     this.confirmed = opts.confirmed || null;
     const r = this.result();
     this.lastResult = r;
     return [
-      text(`I've loaded <b>${esc(b.id)}</b> for <b>${esc(b.seller || 'this seller')}</b> from your file. Every value is kept exactly as you wrote it.`),
+      text(`I've loaded <b>${esc(b.id)}</b> for <b>${esc(b.seller || 'this seller')}</b> ${opts.source === 'link' ? 'from a shared link' : 'from your file'}. Every value is kept exactly as ${opts.source === 'link' ? 'it was shared' : 'you wrote it'}.`),
       ...this.reviewMessages(r),
     ];
   }
@@ -152,6 +160,21 @@ export class Conversation {
     return this.afterChange(before, [`Applied: ${action.label || describeAction(action, f => FIELD_LABEL[f] || f)}`], []);
   }
 
+  /** Apply several structured fixes as one step (one undo), e.g. "3 pallets with Carrier B". */
+  applyFixes(actions: Action[], label: string): BotMessage[] {
+    this.history.push(this.snapshot());
+    const before = this.result();
+    for (const action of actions) {
+      if (action.type === 'carrier') { this.carrierOverride = action.value; continue; }
+      const nb = applyAction(this.toBooking(), action);
+      const metas = action.type === 'removeItem' ? this.b.items.filter((_, i) => i !== action.index) : this.b.items;
+      this.b = { ...this.b, ...nb, items: nb.items.map((it, i) => asChatItem(it, metas[i])) };
+      if (action.type === 'setBooking' && (action.field === 'cartons' || action.field === 'declaredValue')) this.stated[action.field] = true;
+    }
+    this.confirmed = null;
+    return this.afterChange(before, [`Applied: ${label}`], []);
+  }
+
   /** A direct edit from the booking panel. */
   editField(field: string, value: string | number | null, idx?: number | null): BotMessage[] {
     this.history.push(this.snapshot());
@@ -165,6 +188,30 @@ export class Conversation {
     this.confirmed = null;
     if (!changes.length) { this.history.pop(); return []; }
     return this.afterChange(before, changes.map(c => 'In the panel: ' + lowerFirst(c)), notes);
+  }
+
+  /** Give the conversation what this browser remembers (saved sellers and products). */
+  setMemory(profiles: Profiles): void {
+    this.memory = profiles;
+  }
+  hasLastBooking(): Booking | null {
+    return lastBooking(this.memory);
+  }
+
+  /** Start a new booking as a copy of an earlier one: new reference, ready date and appointment asked again. */
+  loadTemplate(b: Booking): BotMessage[] {
+    this.reset();
+    const copy = JSON.parse(JSON.stringify(b)) as Booking;
+    this.b = {
+      ...copy, id: newChatBooking().id, readyDate: '', appointment: copy.destType === 'Warehouse' ? '' : copy.appointment, _row: undefined,
+      items: copy.items.map(it => asChatItem(it)),
+    };
+    this.stated = { cartons: true, declaredValue: true };
+    this.itemsDone = true;
+    this.history.push(this.snapshot());
+    const r = this.result();
+    this.lastResult = r;
+    return [text(`Copied your last booking for <b>${esc(copy.seller)}</b> (${esc(copy.originCity)} → ${esc(copy.destCity)}, ${copy.items.length} product line${copy.items.length === 1 ? '' : 's'}, ${fmtNum(copy.pallets)} pallets). Change anything that's different, e.g. <i>"make it 5 pallets"</i>.`), ...this.ask()];
   }
 
   addItemFromPanel(): BotMessage[] {
@@ -194,6 +241,11 @@ export class Conversation {
       return this.afterChange(before, ['Undid the last change.'], []);
     }
     if (u.cmd === 'help') return [text(helpText())];
+    if (u.cmd === 'repeatLast') {
+      const last = lastBooking(this.memory);
+      if (!last) return [text('There is no earlier booking saved in this browser yet. Confirm a booking once and you can repeat it with one line.')];
+      return this.loadTemplate(last);
+    }
     if (u.cmd === 'review') {
       const r = this.result();
       if (!this.isComplete()) return [text(`Here's where we are so far. Still needed: ${esc(this.missingList().join(', '))}.`), { kind: 'review', result: r, partial: true }, ...this.ask()];
@@ -376,6 +428,26 @@ export class Conversation {
 
   /** Fill in values we can work out, and say so. */
   private derive(notes: string[]): void {
+    // Fill in what this browser already knows about the seller and their products.
+    const profile = this.b.seller ? findSeller(this.memory, this.b.seller) : null;
+    if (profile && !this.b.originCity && profile.originCity) {
+      this.b.originCity = profile.originCity;
+      notes.push(`${profile.seller} usually ships from ${profile.originCity}, so I've used that. Change it if not.`);
+    }
+    const products = allProducts(this.memory);
+    if (products.length) this.b.items.forEach(it => {
+      if (!it.description || it._auto.saved) return;
+      const p = matchProduct(products, it.description);
+      if (!p) return;
+      const filled: string[] = [];
+      if (!it.hs && !it._asked.hs && p.hs) { it.hs = p.hs; it._asked.hs = true; filled.push(`HS ${p.hs}`); }
+      if (!it.origin && !it._asked.origin && p.origin) { it.origin = p.origin; it._asked.origin = true; filled.push(`made in ${p.origin}`); }
+      if (it.upc === null && p.upc !== null) { it.upc = p.upc; filled.push(`${p.upc} per carton`); }
+      if (it.unitWeight === null && p.unitWeight !== null) { it.unitWeight = p.unitWeight; filled.push(`${kg(p.unitWeight)} each`); }
+      if (it.unitPrice === null && p.unitPrice !== null) { it.unitPrice = p.unitPrice; filled.push(`${money(p.unitPrice)} each`); }
+      it._auto.saved = true;
+      if (filled.length) notes.push(`${it.description}: filled from your saved product "${p.description}" (${filled.join(', ')}).`);
+    });
     this.b.items.forEach((it, i) => {
       if ((it.cartons === null || it._auto.cartons) && it.qty && it.upc) {
         const c = it.qty / it.upc;

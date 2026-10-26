@@ -8,6 +8,7 @@ import type { ChatActions } from './ChatView';
 import { CarrierCards } from './components/carrier';
 import { Checklist, IssuesWithNotes, StatusBar } from './components/results';
 import { NextSteps, ShippingLabel, Stepper } from './components/confirmation';
+import { Alternatives, ImpactNote } from './components/extras';
 import { toast } from './util';
 
 const NUM_FIELDS = ['pallets', 'cartons', 'declaredValue', 'grossWeight', 'qty', 'unitPrice', 'upc', 'unitWeight'];
@@ -95,7 +96,7 @@ export function BookingPanel({ conv, act, version }: { conv: Conversation; act: 
     <div className={`panel manifest ${started ? 'started' : ''}`} data-testid="booking-panel">
       <div className="manifest-head">
         <div>
-          <span className="eyebrow">Live booking{conv.mode === 'file' ? ' · from your file' : ''}</span>
+          <span className="eyebrow">Live booking{conv.loadedFrom === 'link' ? ' · from a shared link' : conv.mode === 'file' ? ' · from your file' : ''}</span>
           <h2 className="mono" style={{ fontFamily: 'var(--f-mono)', fontSize: 18 }}>{b.id}</h2>
         </div>
         <div className="row">
@@ -153,10 +154,11 @@ export function BookingPanel({ conv, act, version }: { conv: Conversation; act: 
           <div>
             <div className="section-title"><h3>Pre-flight checks</h3><button type="button" className="btn small" onClick={act.invoice}>Invoice draft</button></div>
             <StatusBar r={r} />
+            <ImpactNote r={r} />
             <div style={{ marginTop: 10 }}><IssuesWithNotes r={r} onFix={act.fix} /></div>
             <details className="more" open><summary>All 10 rules</summary><div style={{ marginTop: 8 }}><Checklist r={r} /></div></details>
           </div>
-          <div><div className="section-title"><h3>Carrier</h3></div><CarrierCards r={r} onCarrier={act.carrier} /></div>
+          <div><div className="section-title"><h3>Carrier</h3></div><CarrierCards r={r} onCarrier={act.carrier} /><Alternatives booking={r.booking} carrierOverride={conv.carrierOverride} onApply={act.applyAlt} /></div>
           <div>
             <div className="section-title"><h3>Confirmation</h3></div>
             <ShippingLabel r={r} reference={conv.confirmed} />
@@ -165,6 +167,8 @@ export function BookingPanel({ conv, act, version }: { conv: Conversation; act: 
               <button type="button" className="btn primary" onClick={() => act.send('confirm')} disabled={r.status === 'Red'} title={r.status === 'Red' ? 'Fix the red issues first' : undefined}>
                 {conv.confirmed ? 'Confirmed ✓' : 'Confirm booking'}
               </button>
+              <button type="button" className="btn" onClick={act.print}>Print documents</button>
+              <button type="button" className="btn" onClick={act.share} title="Copy a link that opens this booking">Share link</button>
               {act.backToFile && <button type="button" className="btn" onClick={act.backToFile}>Back to file results</button>}
             </div>
           </div>

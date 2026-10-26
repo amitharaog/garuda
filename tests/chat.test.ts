@@ -175,3 +175,64 @@ describe('understand()', () => {
     expect(u.items.map(i => i.qty)).toEqual([120, 300]);
   });
 });
+
+describe('memory: saved products and repeat bookings', () => {
+  const memory = () => {
+    const data: Record<string, string> = {};
+    return { getItem: (k: string) => data[k] ?? null, setItem: (k: string, v: string) => { data[k] = v; } };
+  };
+  const confirmedNorthfield = () => {
+    const c = new Conversation();
+    for (const t of [OPENING, '691200', 'UK', "that's everything", '620', 'yes', 'confirm']) c.handle(t);
+    expect(c.confirmed).toMatch(/^PF-/);
+    return c.toBooking();
+  };
+
+  it('fills HS code, origin, pack size and weight from a saved product, and the usual origin city', async () => {
+    const { rememberBooking } = await import('../src/io/profiles');
+    const store = memory();
+    const profiles = rememberBooking(store, confirmedNorthfield());
+    const c = new Conversation();
+    c.setMemory(profiles);
+    const out = c.handle('Northfield Goods here, 540 ceramic coffee mugs at £5 to a warehouse in Hamburg');
+    expect(c.b.originCity).toBe('Manchester');
+    expect(c.b.items[0]).toMatchObject({ hs: '691200', origin: 'United Kingdom', upc: 12, unitWeight: 0.5 });
+    expect(out.map(m => (m.kind === 'text' ? m.html : '')).join(' ')).toMatch(/filled from your saved product/);
+    expect(c.pending?.field).toBe('moreItems'); // HS and origin are not asked again
+  });
+
+  it('"repeat last booking" copies it with a new reference and asks for the new date', async () => {
+    const { rememberBooking } = await import('../src/io/profiles');
+    const last = confirmedNorthfield();
+    const c = new Conversation();
+    c.setMemory(rememberBooking(memory(), last));
+    const out = c.handle('repeat my last booking');
+    expect(c.b.id).not.toBe(last.id);
+    expect(c.b.items).toHaveLength(1);
+    expect(c.b.readyDate).toBe('');
+    expect(c.pending?.field).toBe('readyDate');
+    expect(out[0].kind === 'text' && out[0].html).toMatch(/Copied your last booking/);
+    c.handle('next monday');
+    c.handle('not yet');
+    expect(c.result().status).toBe('Amber');
+  });
+
+  it('says so when nothing is saved yet', () => {
+    const out = new Conversation().handle('same as last time');
+    expect(out[0].kind === 'text' && out[0].html).toMatch(/no earlier booking saved/);
+  });
+
+  it('reads a pasted multi-line order email', () => {
+    const c = new Conversation();
+    c.handle(`Hi team,
+
+Please book the following for Pennine Textiles:
+- 600 wool scarves at £6 each, 20 per carton, 0.15 kg each, made in Turkey
+Collection from Birmingham, delivery to our customer's shop in Lyon.
+Ready 20-11-2026, cheapest please. 1 pallet, 110 kg in total.
+
+Thanks`);
+    expect(c.b).toMatchObject({ seller: 'Pennine Textiles', originCity: 'Birmingham', destCity: 'Lyon', destType: 'Business address', readyDate: '20-11-2026', priority: 'Cheapest', pallets: 1, grossWeight: 110 });
+    expect(c.b.items[0]).toMatchObject({ qty: 600, unitPrice: 6, upc: 20, unitWeight: 0.15, origin: 'Turkey', cartons: 30 });
+  });
+});

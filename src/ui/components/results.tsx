@@ -25,6 +25,12 @@ export function IssueCard({ issue, onFix }: { issue: Issue; onFix?: OnFix }) {
       </div>
       <p>{issue.what}</p>
       <p className="fix"><strong>How to fix:</strong> {issue.fix}</p>
+      {issue.dg && (
+        <details className="dg">
+          <summary>Dangerous goods: {issue.dg.un} · {issue.dg.cls}</summary>
+          <ul>{issue.dg.needs.map(n => <li key={n}>{n}</li>)}</ul>
+        </details>
+      )}
       {onFix && issue.fixes && issue.fixes.length > 0 && (
         <div className="fixes">
           {issue.fixes.map(f => (

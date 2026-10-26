@@ -1,18 +1,21 @@
 /* Check a file: drop zone, summary counts, downloads, bookings table with filters, and the detail panel. */
-import { useRef, useState } from 'react';
-import { fmtDate, fmtNum, kg, money, countryCode } from '../domain';
+import { useMemo, useRef, useState } from 'react';
+import { countryCode, diffBookings, fileImpact, fmtDate, fmtNum, kg, money, safeFixes } from '../domain';
 import type { Action, Booking, CheckResult, Status } from '../domain';
 import type { ReadWarning } from '../io/assemble';
 import { reportText } from '../io/report';
 import { CarrierCards } from './components/carrier';
 import { Checklist, IssuesWithNotes, StatusBar } from './components/results';
 import { NextSteps, ShippingLabel } from './components/confirmation';
+import { Alternatives, ImpactNote } from './components/extras';
 import { copyText, downloadWorkbook } from './util';
 
 export type Filter = 'All' | Status;
 
 export interface FileState {
   bookings: Booking[];
+  /** The bookings exactly as uploaded, for the before/after comparison. */
+  original: Booking[];
   warnings: ReadWarning[];
   name: string;
   overrides: Record<string, string>;
@@ -27,9 +30,13 @@ export interface FileActions {
   select: (id: string) => void;
   filter: (f: Filter) => void;
   fix: (action: Action) => void;
+  applyAlt: (actions: Action[], label: string) => void;
+  fixAllSafe: () => void;
   confirm: () => void;
   fixInChat: (id: string) => void;
   invoice: () => void;
+  print: () => void;
+  share: () => void;
 }
 
 function RuleChips({ r }: { r: CheckResult }) {
@@ -60,10 +67,12 @@ function Detail({ fs, r, act }: { fs: FileState; r: CheckResult; act: FileAction
         <div className="row">
           <button type="button" className="btn primary" onClick={() => act.fixInChat(b.id)}>Fix in chat</button>
           <button type="button" className="btn" onClick={act.invoice}>Invoice draft</button>
+          <button type="button" className="btn" onClick={act.print}>Print documents</button>
+          <button type="button" className="btn" onClick={act.share} title="Copy a link that opens this booking">Share link</button>
         </div>
       </div>
       <div className="col">
-        <div><StatusBar r={r} /></div>
+        <div><StatusBar r={r} /><ImpactNote r={r} /></div>
         <div>
           <div className="section-title"><h3>What's wrong &amp; how to fix it</h3></div>
           <IssuesWithNotes r={r} onFix={act.fix} />
@@ -90,7 +99,8 @@ function Detail({ fs, r, act }: { fs: FileState; r: CheckResult; act: FileAction
         <details className="more"><summary>All 10 rules</summary><div style={{ marginTop: 8 }}><Checklist r={r} /></div></details>
       </div>
       <div className="col">
-        <div><div className="section-title"><h3>Recommended carrier</h3></div><CarrierCards r={r} onCarrier={key => act.fix({ type: 'carrier', value: key, label: key ? `Carrier → ${key}` : 'Recommended carrier' })} /></div>
+        <div><div className="section-title"><h3>Recommended carrier</h3></div><CarrierCards r={r} onCarrier={key => act.fix({ type: 'carrier', value: key, label: key ? `Carrier → ${key}` : 'Recommended carrier' })} />
+          <Alternatives booking={b} carrierOverride={fs.overrides[b.id]} onApply={act.applyAlt} /></div>
         <div>
           <div className="section-title"><h3>Confirmation</h3></div>
           <ShippingLabel r={r} reference={ref} />
@@ -114,6 +124,9 @@ export function FileView({ fs, results, act }: { fs: FileState; results: CheckRe
   const cost = results.reduce((s, r) => s + (r.rec.chosen?.cost || 0), 0);
   const rows = results.filter(r => fs.filter === 'All' || r.status === fs.filter);
   const sel = results.find(r => r.booking.id === fs.sel) || null;
+  const impact = useMemo(() => fileImpact(results), [results]);
+  const safeCount = useMemo(() => results.reduce((s, r) => s + safeFixes(r).length, 0), [results]);
+  const changes = useMemo(() => diffBookings(fs.original, fs.bookings), [fs.original, fs.bookings]);
   const select = (id: string) => {
     act.select(id);
     requestAnimationFrame(() => detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
@@ -158,9 +171,13 @@ export function FileView({ fs, results, act }: { fs: FileState; results: CheckRe
               </div>
               <div className="sum-foot">
                 <span className="muted">Freight at recommended carriers: <b className="num">{money(cost)}</b></span>
+                {impact.cost > 0 && <span className="impact-line" data-testid="file-impact">Catching these issues avoids roughly <b>{money(impact.cost)}</b> in extra costs and <b>{impact.days}</b> booking-days of delay <span className="muted">(estimate)</span></span>}
+                <button type="button" className="btn primary small fix-all" onClick={act.fixAllSafe} disabled={!safeCount} title="Declared values, carton totals and dropped leading zeros: fixes with only one right answer">
+                  ✓ Fix all safe issues{safeCount ? ` (${safeCount})` : ''}
+                </button>
                 <div className="row">
                   <button type="button" className="btn small" onClick={() => downloadWorkbook(w => w.reportWorkbook(results), 'garuda-issues-report.xlsx')}>Download issues report</button>
-                  <button type="button" className="btn small" onClick={() => downloadWorkbook(w => w.bookingsWorkbook(fs.bookings), 'garuda-corrected-bookings.xlsx')}>Download corrected file</button>
+                  <button type="button" className="btn small" onClick={() => downloadWorkbook(w => w.bookingsWorkbook(fs.bookings, changes), 'garuda-corrected-bookings.xlsx')}>Download corrected file</button>
                   <button type="button" className="btn small" onClick={() => copyText(reportText(results))}>Copy report</button>
                 </div>
               </div>
@@ -176,6 +193,22 @@ export function FileView({ fs, results, act }: { fs: FileState; results: CheckRe
           <span className="eyebrow">Reading the file</span>
           <ul>{fs.warnings.map((w, i) => <li key={i} className={w.level === 'warn' ? 'sev-amber' : 'muted'} style={{ fontWeight: 400 }}>{w.text}</li>)}</ul>
         </div>
+      )}
+
+      {changes.length > 0 && (
+        <details className="panel changes" data-testid="changes">
+          <summary><b>{changes.length} change{changes.length > 1 ? 's' : ''} since upload</b> <span className="muted">· included as a “Changes” sheet in the corrected file</span></summary>
+          <div className="tbl-wrap" style={{ margin: '10px 0 0' }}>
+            <table>
+              <thead><tr><th>Booking</th><th>Sheet</th><th className="n">Row</th><th>SKU</th><th>Field</th><th>Was</th><th>Now</th></tr></thead>
+              <tbody>
+                {changes.map((c, i) => (
+                  <tr key={i}><td className="mono">{c.bookingId}</td><td>{c.sheet}</td><td className="n">{c.row ?? '—'}</td><td className="mono">{c.sku || '—'}</td><td>{c.field}</td><td className="was">{c.from}</td><td className="now">{c.to}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
       )}
 
       {results.length > 0 && (

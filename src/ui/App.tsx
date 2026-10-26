@@ -1,36 +1,46 @@
-/* App shell: tabs, chat state, file state, and the link between them ("Fix in chat" syncs changes back to the file). */
+/* App shell: tabs, chat state, file state, and the link between them ("Fix in chat" syncs changes back to the file).
+   Also owns the guided demo, share links, saved sellers/products and the print pack. */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { applyAction, check, normalizeBooking } from '../domain';
+import { applyAction, check, fixAllSafe, normalizeBooking } from '../domain';
 import type { Action, Booking, CheckResult } from '../domain';
 import { Conversation } from '../chat/conversation';
 import type { BotMessage } from '../chat/conversation';
 import { fromRows } from '../io/assemble';
 import type { ReadResult } from '../io/assemble';
+import { SHARE_PREFIX, decodeBooking, shareUrl } from '../io/share';
+import { loadProfiles, rememberBooking } from '../io/profiles';
 import { SAMPLE_BOOKING_ROWS, SAMPLE_ITEM_ROWS, SAMPLE_NAME } from '../data/sample';
-import { ChatView } from './ChatView';
+import { ChatView, STARTERS } from './ChatView';
 import type { ChatActions, LogEntry } from './ChatView';
 import { FileView } from './FileView';
 import type { FileActions, FileState } from './FileView';
 import { RulesView } from './RulesView';
+import { InsightsView } from './InsightsView';
 import { InvoiceModal } from './components/InvoiceModal';
-import { toast } from './util';
+import { PrintModal } from './components/PrintModal';
+import { copyText, safeStorage, toast } from './util';
 
-type View = 'chat' | 'file' | 'rules';
-const VIEWS: Array<[View, string]> = [['chat', 'Book by chat'], ['file', 'Check a file'], ['rules', 'Rules']];
+type View = 'chat' | 'file' | 'insights' | 'rules';
+const VIEWS: Array<[View, string]> = [['chat', 'Book by chat'], ['file', 'Check a file'], ['insights', 'Insights'], ['rules', 'Rules']];
 const viewFromHash = (): View => {
   const h = (typeof location !== 'undefined' ? location.hash : '').slice(1);
-  return h === 'file' || h === 'rules' ? h : 'chat';
+  return h === 'file' || h === 'rules' || h === 'insights' ? h : 'chat';
 };
 
 function fileStateFrom(read: ReadResult, name: string): FileState {
   const firstRed = read.bookings.find(b => check(b).status === 'Red') || read.bookings[0];
-  return { bookings: read.bookings, warnings: read.warnings, name, overrides: {}, confirmed: {}, filter: 'All', sel: firstRed ? firstRed.id : null };
+  return { bookings: read.bookings, original: read.bookings, warnings: read.warnings, name, overrides: {}, confirmed: {}, filter: 'All', sel: firstRed ? firstRed.id : null };
 }
 const sampleState = () => fileStateFrom(fromRows(SAMPLE_BOOKING_ROWS, SAMPLE_ITEM_ROWS), SAMPLE_NAME);
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+const storage = safeStorage();
 
 export function App() {
   const convRef = useRef<Conversation | null>(null);
-  if (!convRef.current) convRef.current = new Conversation();
+  if (!convRef.current) {
+    convRef.current = new Conversation();
+    convRef.current.setMemory(loadProfiles(storage));
+  }
   const conv = convRef.current;
   const nextId = useRef(1);
   const [log, setLog] = useState<LogEntry[]>([{ id: 0, role: 'greet' }]);
@@ -39,6 +49,9 @@ export function App() {
   const [fs, setFs] = useState<FileState>(sampleState);
   const [fileLink, setFileLink] = useState<string | null>(null);
   const [invoice, setInvoice] = useState<{ booking: Booking; result: CheckResult } | null>(null);
+  const [printing, setPrinting] = useState<{ result: CheckResult; reference: string | null } | null>(null);
+  const [demo, setDemo] = useState<{ step: number; total: number; label: string; done?: boolean } | null>(null);
+  const demoCancel = useRef(false);
 
   const [theme, setTheme] = useState<'dark' | 'light'>(() => (document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'));
   const toggleTheme = () => {
@@ -48,6 +61,7 @@ export function App() {
     try { localStorage.setItem('pf-theme', next); } catch { /* storage blocked */ }
   };
   const closeInvoice = useCallback(() => setInvoice(null), []);
+  const closePrint = useCallback(() => setPrinting(null), []);
   const results = useMemo(() => fs.bookings.map(b => check(b, { carrierOverride: fs.overrides[b.id] })), [fs.bookings, fs.overrides]);
 
   const show = useCallback((v: View) => {
@@ -56,7 +70,7 @@ export function App() {
     window.scrollTo(0, 0);
   }, []);
   useEffect(() => {
-    const onHash = () => setView(viewFromHash());
+    const onHash = () => { if (!location.hash.startsWith('#' + SHARE_PREFIX)) setView(viewFromHash()); };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
@@ -78,29 +92,52 @@ export function App() {
     });
   }, [conv, fileLink]);
 
-  /** Run one conversation step: log the user's words, the bot's reply, re-render, sync. */
+  /** Run one conversation step: log the user's words, the bot's reply, re-render, sync, and remember confirmed bookings. */
   const run = useCallback((userText: string | null, step: () => BotMessage[]) => {
     let out: BotMessage[];
     try { out = step(); } catch (e) {
       console.error(e);
       out = [{ kind: 'text', html: 'Something went wrong reading that. Try rephrasing, or edit the field in the booking panel.' }];
     }
+    if (out.some(m => m.kind === 'confirmation')) conv.setMemory(rememberBooking(storage, normalizeBooking(conv.toBooking())));
     const entries: LogEntry[] = [];
     if (userText) entries.push({ id: nextId.current++, role: 'user', text: userText });
     out.forEach(msg => entries.push({ id: nextId.current++, role: 'bot', msg }));
     setLog(l => [...l, ...entries]);
     setVersion(v => v + 1);
     syncBack();
-  }, [syncBack]);
+  }, [conv, syncBack]);
+
+  const openShared = useCallback((booking: Booking, carrierOverride: string | null) => {
+    setFileLink(null);
+    const msgs = conv.loadBooking(booking, { carrierOverride, source: 'link' });
+    setLog(msgs.map(msg => ({ id: nextId.current++, role: 'bot' as const, msg })));
+    setVersion(v => v + 1);
+    show('chat');
+  }, [conv, show]);
+
+  // A shared link (#share=...) opens that booking in the chat.
+  useEffect(() => {
+    const h = location.hash;
+    if (!h.startsWith('#' + SHARE_PREFIX)) return;
+    const d = decodeBooking(h.slice(1 + SHARE_PREFIX.length));
+    if (d) { openShared(d.booking, d.carrierOverride); toast(`Opened shared booking ${d.booking.id}`); }
+    else { toast('That share link could not be read'); show('chat'); }
+  }, []);
+
+  const share = (b: Booking, override: string | null) => copyText(shareUrl(location.href, b, override));
 
   const chat: ChatActions = {
     send: t => run(t, () => conv.handle(t)),
     fix: a => run(a.label || 'Apply fix', () => conv.applyFix(a)),
+    applyAlt: (actions, label) => run(`Use ${label}`, () => conv.applyFixes(actions, label)),
     carrier: key => run(key ? `Use ${key}` : 'Use the recommended carrier', () => conv.applyFix({ type: 'carrier', value: key, label: key ? `carrier → ${key}` : 'recommended carrier' })),
     edit: (field, value, item) => run(null, () => conv.editField(field, value, item ?? null)),
     addItem: () => run(null, () => conv.addItemFromPanel()),
     removeItem: i => run(`Remove item ${i + 1}`, () => conv.removeItemFromPanel(i)),
     invoice: () => setInvoice({ booking: normalizeBooking(conv.toBooking()), result: conv.result() }),
+    print: () => setPrinting({ result: conv.result(), reference: conv.confirmed }),
+    share: () => share(normalizeBooking(conv.toBooking()), conv.carrierOverride),
     reset: () => {
       conv.reset();
       setFileLink(null);
@@ -110,21 +147,20 @@ export function App() {
     backToFile: fileLink ? () => { setFs(s => ({ ...s, sel: fileLink })); show('file'); } : null,
   };
 
-  const fileFix = (action: Action) => {
-    const id = fs.sel;
+  const updateBooking = (id: string, change: (b: Booking) => Booking, override?: string | null) => {
     const i = fs.bookings.findIndex(b => b.id === id);
-    if (!id || i < 0) return;
-    const before = results[i];
+    if (i < 0) return null;
     const bookings = fs.bookings.slice();
+    bookings[i] = { ...change(bookings[i]), _row: bookings[i]._row };
     const overrides = { ...fs.overrides };
-    if (action.type === 'carrier') { if (action.value) overrides[id] = action.value; else delete overrides[id]; }
-    else bookings[i] = { ...normalizeBooking(applyAction(bookings[i], action)), _row: bookings[i]._row };
+    if (override !== undefined) { if (override) overrides[id] = override; else delete overrides[id]; }
     const confirmed = { ...fs.confirmed };
     delete confirmed[id];
     setFs({ ...fs, bookings, overrides, confirmed });
-    const after = check(bookings[i], { carrierOverride: overrides[id] });
-    toast(`${action.label || 'Updated'}: now ${after.status}${before.status !== after.status ? ` (was ${before.status})` : ''}`);
+    return { before: results[i], after: check(bookings[i], { carrierOverride: overrides[id] }) };
   };
+  const statusToast = (label: string, d: { before: CheckResult; after: CheckResult } | null) =>
+    d && toast(`${label}: now ${d.after.status}${d.before.status !== d.after.status ? ` (was ${d.before.status})` : ''}`);
 
   const file: FileActions = {
     load: async files => {
@@ -137,18 +173,45 @@ export function App() {
         if (read.bookings.length) toast(`Checked ${read.bookings.length} booking${read.bookings.length > 1 ? 's' : ''}`);
       } catch (e) {
         console.error(e);
-        setFs({ bookings: [], warnings: [{ level: 'warn', text: 'Could not read the file: ' + (e as Error).message }], name, overrides: {}, confirmed: {}, filter: 'All', sel: null });
+        setFs({ bookings: [], original: [], warnings: [{ level: 'warn', text: 'Could not read the file: ' + (e as Error).message }], name, overrides: {}, confirmed: {}, filter: 'All', sel: null });
       }
     },
     loadSample: () => setFs(sampleState()),
     select: id => setFs(s => ({ ...s, sel: id })),
     filter: f => setFs(s => ({ ...s, filter: f })),
-    fix: fileFix,
+    fix: (action: Action) => {
+      if (!fs.sel) return;
+      const d = action.type === 'carrier'
+        ? updateBooking(fs.sel, b => b, action.value)
+        : updateBooking(fs.sel, b => normalizeBooking(applyAction(b, action)));
+      statusToast(action.label || 'Updated', d);
+    },
+    applyAlt: (actions, label) => {
+      if (!fs.sel) return;
+      const carrier = actions.find(a => a.type === 'carrier');
+      const d = updateBooking(fs.sel, b => actions.filter(a => a.type !== 'carrier').reduce((x, a) => normalizeBooking(applyAction(x, a)), b), carrier && carrier.type === 'carrier' ? carrier.value : undefined);
+      statusToast(label, d);
+    },
+    fixAllSafe: () => {
+      let fixes = 0, touched = 0;
+      const bookings = fs.bookings.map(b => {
+        const r = fixAllSafe(b, fs.overrides[b.id]);
+        if (r.applied.length) { fixes += r.applied.length; touched++; }
+        return r.applied.length ? { ...r.booking, _row: b._row } : b;
+      });
+      if (!fixes) { toast('Nothing safe to fix automatically: the remaining issues need a decision'); return; }
+      const confirmed = { ...fs.confirmed };
+      bookings.forEach((b, i) => { if (b !== fs.bookings[i]) delete confirmed[b.id]; });
+      setFs({ ...fs, bookings, confirmed });
+      const left = bookings.map(b => check(b, { carrierOverride: fs.overrides[b.id] })).filter(r => r.status === 'Red').length;
+      toast(`Applied ${fixes} safe fix${fixes > 1 ? 'es' : ''} in ${touched} booking${touched > 1 ? 's' : ''}. ${left} still need${left === 1 ? 's' : ''} a decision.`);
+    },
     confirm: () => {
       const r = results.find(x => x.booking.id === fs.sel);
       if (!r || r.status === 'Red' || !fs.sel) return;
       const ref = 'PF-' + fs.sel.replace(/\W/g, '') + '-' + Math.random().toString(36).slice(2, 6).toUpperCase();
       setFs(s => ({ ...s, confirmed: { ...s.confirmed, [fs.sel as string]: ref } }));
+      conv.setMemory(rememberBooking(storage, r.booking));
       toast('Booking confirmed');
     },
     fixInChat: id => {
@@ -164,6 +227,46 @@ export function App() {
       const r = results.find(x => x.booking.id === fs.sel);
       if (r) setInvoice({ booking: r.booking, result: r });
     },
+    print: () => {
+      const r = results.find(x => x.booking.id === fs.sel);
+      if (r) setPrinting({ result: r, reference: fs.confirmed[r.booking.id] || null });
+    },
+    share: () => {
+      const r = results.find(x => x.booking.id === fs.sel);
+      if (r) share(r.booking, fs.overrides[r.booking.id] || null);
+    },
+  };
+
+  // The demo always calls the latest render's actions, so file state is never stale between steps.
+  const actsRef = useRef({ chat, file });
+  actsRef.current = { chat, file };
+  const runDemo = async () => {
+    demoCancel.current = false;
+    const A = () => actsRef.current;
+    const steps: Array<[string, () => void]> = [
+      ['Book by chat: describe the shipment in plain words', () => { A().chat.reset(); show('chat'); }],
+      ['Garuda fills what it can and asks only for what is missing', () => A().chat.send(STARTERS[0])],
+      ['Tap the suggested HS code', () => A().chat.send('use suggested')],
+      ['Country of origin', () => A().chat.send('UK')],
+      ['That is the only product', () => A().chat.send("that's everything")],
+      ['Gross weight', () => A().chat.send('620')],
+      ['No warehouse slot yet: all 10 checks run, amber R-08', () => A().chat.send('not yet')],
+      ['Change anything mid-way: checks re-run', () => A().chat.send('add a pallet')],
+      ['Slot booked: now green', () => A().chat.send("we've booked the slot")],
+      ['Confirm: booking reference and shipping label', () => A().chat.send('confirm')],
+      ['Check a whole file with planted mistakes', () => { show('file'); A().file.loadSample(); }],
+      ['Fix every safe issue in one click', () => A().file.fixAllSafe()],
+      ['BK-105 is too heavy for every carrier…', () => A().file.select('BK-105')],
+      ['…so take the cheaper option that fits', () => A().file.applyAlt([{ type: 'setBooking', field: 'pallets', value: 3 }, { type: 'carrier', value: 'Carrier B · Road standard' }], '3 pallets with Carrier B')],
+      ['Insights: mistakes, sellers, freight, risk and what-ifs', () => show('insights')],
+    ];
+    for (let i = 0; i < steps.length; i++) {
+      if (demoCancel.current) break;
+      setDemo({ step: i + 1, total: steps.length, label: steps[i][0] });
+      steps[i][1]();
+      await sleep(i === 0 ? 900 : 1700);
+    }
+    setDemo(d => (demoCancel.current ? null : d && { ...d, done: true, label: 'Demo finished. Try it yourself: type a shipment or load your own file.' }));
   };
 
   return (
@@ -184,11 +287,23 @@ export function App() {
           </button>
         </div>
       </header>
+      {demo && (
+        <div className="demo-bar" role="status" data-testid="demo-bar">
+          <div className="wrap">
+            <span className="demo-step">{demo.done ? 'Done' : `${demo.step} / ${demo.total}`}</span>
+            <span className="demo-label">{demo.label}</span>
+            <button type="button" className="btn small" onClick={() => { demoCancel.current = true; setDemo(null); }}>{demo.done ? 'Close' : 'Stop demo'}</button>
+          </div>
+        </div>
+      )}
       <section className="hero wrap" aria-labelledby="hero-title">
         <span className="eyebrow">UK → Germany · France · Netherlands road freight</span>
         <h2 className="hero-title" id="hero-title">Catch it <span>before</span> it ships.</h2>
         <div className="hero-row">
-          <p className="hero-sub">Book by chat or drop in a file. Every booking is checked against the 10-rule rulebook, matched to the right carrier and confirmed in one place.</p>
+          <div>
+            <p className="hero-sub">Book by chat or drop in a file. Every booking is checked against the 10-rule rulebook, matched to the right carrier and confirmed in one place.</p>
+            <button type="button" className="btn primary demo-btn" onClick={runDemo} disabled={!!demo && !demo.done}>▶ Watch the 60-second demo</button>
+          </div>
           <div className="hero-stats" aria-label="At a glance">
             <div><b>10</b><span>Rulebook checks</span></div>
             <div><b>3</b><span>Carriers compared</span></div>
@@ -203,11 +318,15 @@ export function App() {
         <section className="view" id="view-file" role="tabpanel" aria-labelledby="tab-file" hidden={view !== 'file'}>
           <FileView fs={fs} results={results} act={file} />
         </section>
+        <section className="view" id="view-insights" role="tabpanel" aria-labelledby="tab-insights" hidden={view !== 'insights'}>
+          <InsightsView results={results} bookings={fs.bookings} overrides={fs.overrides} name={fs.name} onOpen={id => { file.select(id); show('file'); }} />
+        </section>
         <section className="view" id="view-rules" role="tabpanel" aria-labelledby="tab-rules" hidden={view !== 'rules'}>
           <RulesView />
         </section>
       </main>
       {invoice && <InvoiceModal booking={invoice.booking} result={invoice.result} onClose={closeInvoice} />}
+      {printing && <PrintModal result={printing.result} reference={printing.reference} onClose={closePrint} />}
     </>
   );
 }

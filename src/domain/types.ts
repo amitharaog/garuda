@@ -74,6 +74,8 @@ export interface Issue {
   itemIndex?: number;
   missingList?: string[];
   numbers?: Record<string, number>;
+  /** R-06 only: how this kind of dangerous good is classified and shipped. */
+  dg?: { un: string; cls: string; needs: readonly string[] };
 }
 
 export interface Carrier {

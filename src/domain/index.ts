@@ -9,3 +9,8 @@ export * from './carriers';
 export * from './rules';
 export * from './fixes';
 export * from './confirmation';
+export * from './holidays';
+export * from './impact';
+export * from './optimize';
+export * from './diff';
+export * from './insights';

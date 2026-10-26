@@ -2,6 +2,7 @@
 import * as XLSX from 'xlsx';
 import { fmtDate } from '../domain/dates';
 import type { Booking, CheckResult } from '../domain/types';
+import type { CellChange } from '../domain/diff';
 
 export const B_HEAD = ['Booking ID', 'Seller name', 'Origin city', 'Origin country', 'Destination city', 'Destination country', 'Destination type', 'Ready to ship date', 'Seller priority', 'Pallets', 'Cartons', 'Total declared value', 'Currency', 'Total gross weight (kg)', 'Delivery appointment booked'];
 export const I_HEAD = ['Booking ID', 'SKU', 'Description', 'HS code', 'Quantity (units)', 'Unit price', 'Units per carton', 'Cartons', 'Unit weight (kg)', 'Country of origin'];
@@ -9,7 +10,8 @@ export const I_HEAD = ['Booking ID', 'SKU', 'Description', 'HS code', 'Quantity 
 /** HS codes go out as numbers like the template, except when a leading zero must survive. */
 const hsCell = (hs: string): string | number | null => (hs === '' ? null : /^\d+$/.test(hs) && !hs.startsWith('0') ? Number(hs) : hs);
 
-export function bookingsWorkbook(bookings: Booking[]): XLSX.WorkBook {
+/** Corrected Bookings + Items sheets; with `changes`, a third sheet lists every cell that differs from the upload. */
+export function bookingsWorkbook(bookings: Booking[], changes: CellChange[] = []): XLSX.WorkBook {
   const bRows: unknown[][] = [['Bookings: corrected by Garuda. Same columns as the template.'], B_HEAD];
   const iRows: unknown[][] = [['Items: corrected by Garuda. Same columns as the template.'], I_HEAD];
   for (const b of bookings) {
@@ -19,6 +21,10 @@ export function bookingsWorkbook(bookings: Booking[]): XLSX.WorkBook {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(bRows), 'Bookings');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(iRows), 'Items');
+  if (changes.length) {
+    const cRows: unknown[][] = [['Booking ID', 'Sheet', 'Original row', 'SKU', 'Field', 'Was', 'Now'], ...changes.map(c => [c.bookingId, c.sheet, c.row, c.sku, c.field, c.from, c.to])];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(cRows), 'Changes');
+  }
   return wb;
 }
 

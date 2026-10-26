@@ -1,7 +1,8 @@
 /* The rulebook (R-01..R-10) plus clearly labelled extra checks (X-xx). Pure: same booking in, same result out. */
 import { ALLOWED, CITY_TO_COUNTRY, RULE } from './reference';
 import { blank, fmtNum, kg, money, plural, round2 } from './format';
-import { addDays, fmtDate, isWeekend, niceDate, nextWorkingDay, parseDate, today } from './dates';
+import { addDays, fmtDate, isWeekend, isWorkingDay, niceDate, nextWorkingDay, parseDate, today } from './dates';
+import { holidayName } from './holidays';
 import { hsDigits, suggestHS } from './hs';
 import { detectDG, detectDGSoft } from './dangerousGoods';
 import { recommendCarrier } from './carriers';
@@ -187,6 +188,7 @@ export function check(input: Booking | RawBooking, opts: CheckOptions = {}): Che
         fix: 'Take this item out of the shipment and send it separately with a dangerous-goods (ADR) specialist. If the description is wrong (e.g. it really is battery-free), correct the description.',
         itemIndex: i,
         fixes: [{ label: `Remove ${it.sku || 'item'} from shipment`, action: { type: 'removeItem', index: i } }],
+        dg: { un: hit.un, cls: hit.cls, needs: hit.needs },
       });
     } else {
       const soft = detectDGSoft(it.description);
@@ -260,9 +262,25 @@ export function check(input: Booking | RawBooking, opts: CheckOptions = {}): Che
       });
     } else {
       passed['R-10'] = `Ready on ${niceDate(rd)}: not in the past.`;
-      if (isWeekend(rd))
-        add('X-06', { severity: 'Info', ruleText: 'Collections normally happen on working days', title: 'Ready date is a weekend', what: `${niceDate(rd)} is a ${rd.getDay() === 0 ? 'Sunday' : 'Saturday'}. Road carriers usually collect Monday to Friday.`, fix: `Expect collection on ${niceDate(nextWorkingDay(rd))}.` });
+      const ukHoliday = holidayName(rd, 'United Kingdom');
+      if (isWeekend(rd) || ukHoliday)
+        add('X-06', {
+          severity: 'Info', ruleText: 'Collections normally happen on UK working days',
+          title: ukHoliday ? 'Ready date is a UK bank holiday' : 'Ready date is a weekend',
+          what: ukHoliday ? `${niceDate(rd)} is ${ukHoliday}. Road carriers do not usually collect on bank holidays.` : `${niceDate(rd)} is a ${rd.getDay() === 0 ? 'Sunday' : 'Saturday'}. Road carriers usually collect Monday to Friday.`,
+          fix: `Expect collection on ${niceDate(nextWorkingDay(rd))}.`,
+        });
     }
+  }
+  // X-13 arrival on a weekend or a public holiday at the destination
+  if (eta && b.destCountry && !isWorkingDay(eta, b.destCountry)) {
+    const hol = holidayName(eta, b.destCountry);
+    add('X-13', {
+      severity: 'Info', ruleText: 'Deliveries happen on working days at the destination',
+      title: hol ? `Arrival falls on a public holiday in ${b.destCountry}` : 'Arrival falls on a weekend',
+      what: `The estimated arrival, ${niceDate(eta)}, is ${hol ? `${hol} in ${b.destCountry}` : `a ${eta.getDay() === 0 ? 'Sunday' : 'Saturday'}`}. Most receiving sites are closed, so delivery will probably move to ${niceDate(nextWorkingDay(eta, b.destCountry))}.`,
+      fix: b.destType === 'Warehouse' ? `Book the delivery slot for ${niceDate(nextWorkingDay(eta, b.destCountry))}.` : 'Tell the receiver to expect it on the next working day.',
+    });
   }
 
   // Extra checks on route and allowed values

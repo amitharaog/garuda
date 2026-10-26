@@ -1,5 +1,6 @@
 /* Dates: DD-MM-YYYY text, Excel serials, "today" (frozen in tests) and working days. All dates are local midnight. */
 import { blank } from './format';
+import { holidayName } from './holidays';
 
 export function parseDate(v: unknown): Date | null {
   if (blank(v)) return null;
@@ -47,9 +48,12 @@ export function setToday(d: Date | null): void {
 
 export const isWeekend = (d: Date): boolean => d.getDay() === 0 || d.getDay() === 6;
 
-/** The first working day on or after d. */
-export function nextWorkingDay(d: Date): Date {
+/** Monday to Friday and not a public holiday in the country. */
+export const isWorkingDay = (d: Date, country = 'United Kingdom'): boolean => !isWeekend(d) && !holidayName(d, country);
+
+/** The first working day on or after d (collections happen in the UK, so UK bank holidays are skipped by default). */
+export function nextWorkingDay(d: Date, country = 'United Kingdom'): Date {
   let x = addDays(d, 0);
-  while (isWeekend(x)) x = addDays(x, 1);
+  while (!isWorkingDay(x, country)) x = addDays(x, 1);
   return x;
 }

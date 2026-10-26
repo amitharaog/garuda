@@ -4,7 +4,30 @@ Pre-flight shipment checker: conversational shipment booking and error checking 
 
 - **Book by chat:** describe a shipment in plain words. Garuda fills what it can, asks only for what is missing, checks it against the 10-rule rulebook, recommends a carrier and confirms the booking.
 - **Check a file:** upload the judges' workbook (Bookings + Items sheets) or two CSVs. Every booking is checked, fixed in one click, and exported as a corrected workbook and an issues report.
+- **Insights:** mistakes by rule, seller scorecards, freight by carrier and route, on-time risk, a carrier price what-if and consolidation opportunities for the checked file.
 - **Rules:** the rulebook, the extra checks, and how each rule is read.
+
+## Features beyond the brief
+
+| Feature | Where | What it does |
+|---|---|---|
+| Guided demo | "▶ Watch the 60-second demo" in the hero | Plays a scripted run: chat booking, a mid-way change, confirmation, a file with planted mistakes, fix-all, a cheaper option, then Insights. Stoppable at any step. |
+| Cost and delay avoided | Issue panels, file summary, Insights | Rough per-rule estimates (e.g. R-06 ≈ £500 and 5 days, R-08 ≈ £90 and 2 days) summed per booking and per file. Always labelled as estimates, not quotes (`src/domain/impact.ts`). |
+| Fix all safe issues | File summary | Applies only fixes with one right answer: restore a dropped leading zero (R-01), and set the declared value (R-02) or carton total (R-04) when every item line is consistent. Everything else waits for a person. |
+| Changes since upload | File view, corrected workbook | Cell-by-cell before/after list; also written as a "Changes" sheet in the corrected file. |
+| Cheaper options | Carrier section (chat and file) | Carrier + pallet-count combinations that cost less and still pass R-05, with the trade-off in days and on-time rate, and a one-click "Use this". |
+| Consolidation | Insights | Same seller, same route, ready within 3 days: one collection, and the best-case cost if part-loads combine. |
+| Bank holidays | Checks and dates | UK, German, French and Dutch national holidays 2026–27. Collection skips UK bank holidays; arrival on a weekend or destination holiday is an info note. Status is never changed by these notes. |
+| Dangerous-goods detail | R-06 cards | UN number, ADR class and what a DG shipment needs (e.g. UN38.3 summary for lithium batteries). |
+| Voice input | 🎤 next to Send | Browser speech recognition (hidden where the browser has none). |
+| Paste an order | "Paste order" in the chat | Paste an email or PO; it goes through the same parser as typed messages. |
+| Saved sellers and products | Automatic after a confirmation | Kept in this browser only. Fills a seller's usual collection city and a product's HS code, origin, pack size, weight and price on the next booking. |
+| Repeat last booking | Greeting button, or "repeat my last booking" | Copies the last confirmed booking with a new reference and asks only for the new date and slot. |
+| Share link | Booking panel and file detail | The whole booking is encoded in the URL fragment (`#share=…`); nothing is stored on a server. |
+| Print pack | "Print documents" | Booking summary, commercial invoice, packing list, export checklist, pallet labels and carton labels with Code 128 barcodes. Print or save as PDF from the browser. |
+| Seller scorecards, risk, what-if | Insights | Clean-rate per seller, a 0–100 on-time risk heuristic per booking, and how freight and carrier choices shift if one carrier's prices change. |
+
+Not built, because each needs a server, credentials or carrier contracts: live carrier rate and booking APIs, tracking after collection, team accounts with shared booking history, and email/Slack alerts.
 
 The look is dark-first (near-black surfaces, one electric blue `#0016CB` with glow, oversized Inter Tight headings) with a light mode behind the toggle in the header; the choice is remembered per browser.
 
@@ -47,6 +70,11 @@ src/
     rules.ts           check(booking, { carrierOverride }) → CheckResult (R-01..R-10 + extra checks)
     fixes.ts           applyAction(booking, action): setBooking / setItem / removeItem
     confirmation.ts    headline, label fields, "what happens next", invoice rows, booking reference
+    holidays.ts        UK / DE / FR / NL public holidays 2026–27
+    impact.ts          estimated cost and delay avoided per rule, booking and file
+    optimize.ts        safe fixes and fix-all, cheaper carrier/pallet options, consolidation
+    diff.ts            before/after cell changes
+    insights.ts        mistakes by rule, seller scorecards, freight breakdowns, on-time risk, carrier what-if
   chat/
     understand.ts      rule-based language understanding (numbers, £, kg/g, dates, priorities, products…)
     conversation.ts    Conversation: state, asking order, derive(), undo, fixes, confirm
@@ -55,10 +83,14 @@ src/
     readWorkbook.ts    find header rows, map columns by name, skip the untouched grey example row
     writeWorkbook.ts   corrected bookings workbook + issues report workbook
     report.ts          plain-text report for "Copy report"
+    share.ts           encode/decode a booking in a share link
+    profiles.ts        saved sellers and products (localStorage, injectable storage)
+    print.ts           printable document pack and export checklist
+    barcode.ts         Code 128 (set B) SVG barcodes
   data/sample.ts       the 9 sample bookings with planted mistakes
-  ui/                  React views and components (App, ChatView, BookingPanel, FileView, RulesView,
-                       components/: results, carrier, confirmation, InvoiceModal)
-tests/                 rules, carriers, chat, io (Vitest) and e2e/ (Playwright)
+  ui/                  React views and components (App, ChatView, BookingPanel, FileView, InsightsView, RulesView,
+                       components/: results, carrier, confirmation, extras, InvoiceModal, PrintModal)
+tests/                 rules, carriers, chat, io, features, io-extra (Vitest) and e2e/ (Playwright)
 public/                the blank template and the sample workbook, downloadable from the app
 ```
 

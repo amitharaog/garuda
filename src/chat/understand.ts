@@ -111,7 +111,7 @@ export interface NewProduct {
   qty: number | null;
   description: string;
 }
-export type Command = 'reset' | 'undo' | 'help' | 'review' | 'confirm' | 'noMoreItems' | 'addItem';
+export type Command = 'reset' | 'undo' | 'help' | 'review' | 'confirm' | 'noMoreItems' | 'addItem' | 'repeatLast';
 export interface Understood {
   sets: FieldSet[];
   items: NewProduct[];
@@ -169,6 +169,7 @@ export function understand(text: string, ctx: UnderstandContext): Understood {
   if (/^\s*(start over|restart|reset|new booking|clear( all)?|begin again)\s*[.!]*\s*$/i.test(orig)) { out.cmd = 'reset'; return out; }
   if (/^\s*(undo|go back|revert)( that| last( change)?)?\s*[.!]*\s*$/i.test(orig)) { out.cmd = 'undo'; return out; }
   if (/^\s*(help|what can you do|\?)\s*$/i.test(orig)) { out.cmd = 'help'; return out; }
+  if (/^\s*(repeat|copy|duplicate|same as)\s+(my\s+|the\s+)?last(\s+(booking|shipment|one|time|week))?\s*[.!]*\s*$/i.test(orig)) { out.cmd = 'repeatLast'; return out; }
   if (/^\s*(show|view|see)?\s*(me\s*)?(the\s*)?(summary|booking|status|review|checks?)\s*[.!?]*\s*$/i.test(orig)) { out.cmd = 'review'; return out; }
   if (/^\s*(confirm|book it|book now|go ahead|looks good,? book|yes,? (confirm|book)|confirm booking|place (the )?booking|proceed)\b/i.test(orig)) { out.cmd = 'confirm'; return out; }
   if (
@@ -314,8 +315,14 @@ export function understand(text: string, ctx: UnderstandContext): Understood {
 
   // ---- country of origin ("made in ...")
   for (const mm of [...lower().matchAll(/\b(?:made|manufactured|produced|sourced|built|assembled|grown)\s+in\s+(?:the\s+)?([a-z .]+?)(?=[,.;)]|\s+(?:and|at|for|with|hs|sku|\d)\b|$)|\b(?:country of origin|origin country|coo)\s*(?:is|:|=)?\s*([a-z .]+?)(?=[,.;)]|\s+(?:and|at|for|with)\b|$)/gi)]) {
-    const c = findCountry(mm[1] || mm[2]);
-    if (c) { out.sets.push({ field: 'origin', value: c, item: 'cur' }); consume(mm[0]); }
+    const cap = mm[1] || mm[2];
+    const c = findCountry(cap);
+    if (!c) continue;
+    out.sets.push({ field: 'origin', value: c, item: 'cur' });
+    // Consume only up to the country name, so words after it ("... made in Turkey collection from Birmingham") stay available.
+    const hit = COUNTRY_ALIASES.map(([re]) => cap.match(re)).find(Boolean);
+    const end = hit && hit.index !== undefined ? hit.index + hit[0].length : cap.length;
+    consume(mm[0].slice(0, mm[0].length - cap.length + end));
   }
 
   // ---- cities / countries (route)
@@ -358,7 +365,9 @@ export function understand(text: string, ctx: UnderstandContext): Understood {
   // ---- seller name
   const sellerPats = [
     /\b(?:we are|we're|this is|i'?m from|i am from|i work (?:at|for)|company(?: name)? is|seller(?: name)? is|business(?: name)? is|on behalf of|our company is|my company is|the seller is|i run|we run|from the company)\s+([A-Za-z0-9][\w&'.\- ]{1,40}?)(?=\s*[,.;!]|\s+(?:and|we|i|in|based|located|sending|shipping|need|want|would|have|ltd\b(?!\w))\b|$)/i,
-    /\b([A-Z][\w&'-]*(?:\s+[A-Z][\w&'-]*){0,3}\s+(?:Ltd|Limited|LLP|PLC|Co|Goods|Trading|Supplies|Imports|Exports|Homewares|Retail|Designs|Crafts|Studio|Store))\b\.?/,
+    /\b([A-Z][\w&'-]*(?:\s+[A-Z][\w&'-]*){0,3}\s+(?:Ltd|Limited|LLP|PLC|Co|Goods|Trading|Supplies|Imports|Exports|Homewares|Retail|Designs|Crafts|Studio|Store|Textiles|Ceramics|Candles|Outdoor|Beauty|Tech|Foods|Tea))\b\.?/,
+    // "please book the following for Pennine Textiles:" (an order email)
+    /\b(?:following|booking|shipment|order|consignment)\s+for\s+([A-Z][\w&'.-]*(?:\s+[A-Z][\w&'.-]*){0,3})(?=\s*[,.;:!]|\s*$|\s+(?:from|to|please|ready)\b)/,
   ];
   for (const re of sellerPats) {
     const mm = orig.match(re);
