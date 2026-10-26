@@ -11,7 +11,6 @@ Pre-flight shipment checker: conversational shipment booking and error checking 
 
 | Feature | Where | What it does |
 |---|---|---|
-| Guided demo | "▶ Watch the 60-second demo" in the hero | Plays a scripted run: chat booking, a mid-way change, confirmation, a file with planted mistakes, fix-all, a cheaper option, then Insights. Stoppable at any step. |
 | Cost and delay avoided | Issue panels, file summary, Insights | Rough per-rule estimates (e.g. R-06 ≈ £500 and 5 days, R-08 ≈ £90 and 2 days) summed per booking and per file. Always labelled as estimates, not quotes (`src/domain/impact.ts`). |
 | Fix all safe issues | File summary | Applies only fixes with one right answer: restore a dropped leading zero (R-01), and set the declared value (R-02) or carton total (R-04) when every item line is consistent. Everything else waits for a person. |
 | Changes since upload | File view, corrected workbook | Cell-by-cell before/after list; also written as a "Changes" sheet in the corrected file. |

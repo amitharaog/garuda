@@ -10,20 +10,6 @@ const say = async (page: Page, text: string) => {
 };
 const NORTHFIELD = ['691200', 'UK', "that's everything", '620', 'yes'];
 
-test('guided demo runs end to end and lands on Insights', async ({ page }) => {
-  test.setTimeout(90_000);
-  await page.goto('/');
-  await page.getByRole('button', { name: /Watch the 60-second demo/ }).click();
-  const bar = page.getByTestId('demo-bar');
-  await expect(bar).toBeVisible();
-  await expect(bar).toContainText('Demo finished', { timeout: 60_000 });
-  await expect(page.getByRole('tab', { name: 'Insights' })).toHaveAttribute('aria-selected', 'true');
-  await page.getByRole('tab', { name: 'Check a file' }).click();
-  const table = page.getByTestId('bookings-table');
-  await expect(table.locator('tr[data-id="BK-105"] .pill')).toHaveText('Green'); // cheaper option applied
-  await expect(table.locator('tr[data-id="BK-109"] .pill')).toHaveText('Green'); // leading zero restored
-});
-
 test('fix all safe issues, see the changes, and download them in the corrected file', async ({ page }) => {
   await page.goto('/#file');
   await expect(page.getByTestId('file-impact')).toContainText('£');

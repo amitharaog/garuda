@@ -414,15 +414,6 @@ th { background: var(--surface-2); }
 }
 
 /* ================= Added features ================= */
-/* guided demo */
-.demo-btn { margin-top: 16px; }
-.demo-bar { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 66px); z-index: 4; background: var(--accent); color: var(--accent-ink); box-shadow: var(--glow); }
-.demo-bar .wrap { display: flex; align-items: center; gap: 14px; padding-block: 8px; flex-wrap: wrap; }
-.demo-step { font-family: var(--f-mono); font-size: 12px; letter-spacing: .08em; padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, .18); }
-.demo-label { flex: 1; font-weight: 600; min-width: 0; }
-.demo-bar .btn { color: var(--accent-ink); border-color: rgba(255, 255, 255, .5); }
-@media (max-width: 700px) { .demo-bar { top: 0; } }
-
 /* impact (cost and delay avoided) */
 .impact { display: flex; gap: 10px; align-items: baseline; margin-top: 8px; padding: 9px 12px; border-radius: 12px; border: 1px dashed var(--line-strong); font-size: 13.5px; }
 .impact-fig { font-family: var(--f-display); font-weight: 800; font-size: 20px; letter-spacing: -.03em; color: var(--accent-hi); white-space: nowrap; }

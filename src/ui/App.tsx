@@ -1,5 +1,5 @@
 /* App shell: tabs, chat state, file state, and the link between them ("Fix in chat" syncs changes back to the file).
-   Also owns the guided demo, share links, saved sellers/products and the print pack. */
+   Also owns share links, saved sellers/products and the print pack. */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { applyAction, check, fixAllSafe, normalizeBooking } from '../domain';
 import type { Action, Booking, CheckResult } from '../domain';
@@ -10,7 +10,7 @@ import type { ReadResult } from '../io/assemble';
 import { SHARE_PREFIX, decodeBooking, shareUrl } from '../io/share';
 import { loadProfiles, rememberBooking } from '../io/profiles';
 import { SAMPLE_BOOKING_ROWS, SAMPLE_ITEM_ROWS, SAMPLE_NAME } from '../data/sample';
-import { ChatView, STARTERS } from './ChatView';
+import { ChatView } from './ChatView';
 import type { ChatActions, LogEntry } from './ChatView';
 import { FileView } from './FileView';
 import type { FileActions, FileState } from './FileView';
@@ -32,7 +32,6 @@ function fileStateFrom(read: ReadResult, name: string): FileState {
   return { bookings: read.bookings, original: read.bookings, warnings: read.warnings, name, overrides: {}, confirmed: {}, filter: 'All', sel: firstRed ? firstRed.id : null };
 }
 const sampleState = () => fileStateFrom(fromRows(SAMPLE_BOOKING_ROWS, SAMPLE_ITEM_ROWS), SAMPLE_NAME);
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const storage = safeStorage();
 
 export function App() {
@@ -50,8 +49,6 @@ export function App() {
   const [fileLink, setFileLink] = useState<string | null>(null);
   const [invoice, setInvoice] = useState<{ booking: Booking; result: CheckResult } | null>(null);
   const [printing, setPrinting] = useState<{ result: CheckResult; reference: string | null } | null>(null);
-  const [demo, setDemo] = useState<{ step: number; total: number; label: string; done?: boolean } | null>(null);
-  const demoCancel = useRef(false);
 
   const [theme, setTheme] = useState<'dark' | 'light'>(() => (document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'));
   const toggleTheme = () => {
@@ -237,38 +234,6 @@ export function App() {
     },
   };
 
-  // The demo always calls the latest render's actions, so file state is never stale between steps.
-  const actsRef = useRef({ chat, file });
-  actsRef.current = { chat, file };
-  const runDemo = async () => {
-    demoCancel.current = false;
-    const A = () => actsRef.current;
-    const steps: Array<[string, () => void]> = [
-      ['Book by chat: describe the shipment in plain words', () => { A().chat.reset(); show('chat'); }],
-      ['Garuda fills what it can and asks only for what is missing', () => A().chat.send(STARTERS[0])],
-      ['Tap the suggested HS code', () => A().chat.send('use suggested')],
-      ['Country of origin', () => A().chat.send('UK')],
-      ['That is the only product', () => A().chat.send("that's everything")],
-      ['Gross weight', () => A().chat.send('620')],
-      ['No warehouse slot yet: all 10 checks run, amber R-08', () => A().chat.send('not yet')],
-      ['Change anything mid-way: checks re-run', () => A().chat.send('add a pallet')],
-      ['Slot booked: now green', () => A().chat.send("we've booked the slot")],
-      ['Confirm: booking reference and shipping label', () => A().chat.send('confirm')],
-      ['Check a whole file with planted mistakes', () => { show('file'); A().file.loadSample(); }],
-      ['Fix every safe issue in one click', () => A().file.fixAllSafe()],
-      ['BK-105 is too heavy for every carrier…', () => A().file.select('BK-105')],
-      ['…so take the cheaper option that fits', () => A().file.applyAlt([{ type: 'setBooking', field: 'pallets', value: 3 }, { type: 'carrier', value: 'Carrier B · Road standard' }], '3 pallets with Carrier B')],
-      ['Insights: mistakes, sellers, freight, risk and what-ifs', () => show('insights')],
-    ];
-    for (let i = 0; i < steps.length; i++) {
-      if (demoCancel.current) break;
-      setDemo({ step: i + 1, total: steps.length, label: steps[i][0] });
-      steps[i][1]();
-      await sleep(i === 0 ? 900 : 1700);
-    }
-    setDemo(d => (demoCancel.current ? null : d && { ...d, done: true, label: 'Demo finished. Try it yourself: type a shipment or load your own file.' }));
-  };
-
   return (
     <>
       <header className="top">
@@ -287,23 +252,11 @@ export function App() {
           </button>
         </div>
       </header>
-      {demo && (
-        <div className="demo-bar" role="status" data-testid="demo-bar">
-          <div className="wrap">
-            <span className="demo-step">{demo.done ? 'Done' : `${demo.step} / ${demo.total}`}</span>
-            <span className="demo-label">{demo.label}</span>
-            <button type="button" className="btn small" onClick={() => { demoCancel.current = true; setDemo(null); }}>{demo.done ? 'Close' : 'Stop demo'}</button>
-          </div>
-        </div>
-      )}
       <section className="hero wrap" aria-labelledby="hero-title">
         <span className="eyebrow">UK → Germany · France · Netherlands road freight</span>
         <h2 className="hero-title" id="hero-title">Catch it <span>before</span> it ships.</h2>
         <div className="hero-row">
-          <div>
-            <p className="hero-sub">Book by chat or drop in a file. Every booking is checked against the 10-rule rulebook, matched to the right carrier and confirmed in one place.</p>
-            <button type="button" className="btn primary demo-btn" onClick={runDemo} disabled={!!demo && !demo.done}>▶ Watch the 60-second demo</button>
-          </div>
+          <p className="hero-sub">Book by chat or drop in a file. Every booking is checked against the 10-rule rulebook, matched to the right carrier and confirmed in one place.</p>
           <div className="hero-stats" aria-label="At a glance">
             <div><b>10</b><span>Rulebook checks</span></div>
             <div><b>3</b><span>Carriers compared</span></div>
