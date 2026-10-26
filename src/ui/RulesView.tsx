@@ -1,4 +1,4 @@
-/* Rules tab: the rulebook, extra checks, how some rules are read, and how Pre-Flight works. No rate card here. */
+/* Rules tab: the rulebook, extra checks, how some rules are read, and how Garuda works. No rate card here. */
 import { PROTECTS, RULES } from '../domain';
 
 const EXTRAS: Array<[string, string, string]> = [
@@ -41,7 +41,7 @@ export function RulesView() {
         </ul>
       </div>
       <div className="panel prose">
-        <h2>How Pre-Flight works</h2>
+        <h2>How Garuda works</h2>
         <div className="flow">
           <div><h3>Chat assistant</h3><p>Reads plain language, fills the booking, asks only for what is missing, and applies changes like “add a pallet” at any point.</p></div>
           <div><h3>Checking agent</h3><p>Runs the 10 rules plus extra checks after every change, explains each problem and its fix, and picks the carrier.</p></div>

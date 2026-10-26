@@ -1,8 +1,8 @@
-# Pre-Flight Shipment Checker
+# Garuda
 
-Conversational shipment booking and pre-flight error checker for UK → Germany / France / Netherlands road freight (Ops Hackathon, Case 2).
+Pre-flight shipment checker: conversational shipment booking and error checking for UK → Germany / France / Netherlands road freight (Ops Hackathon, Case 2).
 
-- **Book by chat:** describe a shipment in plain words. Pre-Flight fills what it can, asks only for what is missing, checks it against the 10-rule rulebook, recommends a carrier and confirms the booking.
+- **Book by chat:** describe a shipment in plain words. Garuda fills what it can, asks only for what is missing, checks it against the 10-rule rulebook, recommends a carrier and confirms the booking.
 - **Check a file:** upload the judges' workbook (Bookings + Items sheets) or two CSVs. Every booking is checked, fixed in one click, and exported as a corrected workbook and an issues report.
 - **Rules:** the rulebook, the extra checks, and how each rule is read.
 
@@ -100,7 +100,7 @@ Only carriers on the booking's route (UK → destination country) are considered
 - **Cheapest:** lowest price per pallet × pallets (ties: shorter transit).
 - **Fastest:** shortest transit (ties: higher on-time rate, then price).
 - **Most reliable:** highest on-time rate (ties: price).
-- **Balanced:** each carrier is scored 0–1 on cost, speed and on-time rate with min–max scaling across the route (1 = best). Pre-Flight picks the highest *minimum* of the three scores (the carrier with no weak spot), with ties broken by the average score, then price. That is Carrier B on every route (A scores 0 on speed and reliability, C scores 0 on cost).
+- **Balanced:** each carrier is scored 0–1 on cost, speed and on-time rate with min–max scaling across the route (1 = best). Garuda picks the highest *minimum* of the three scores (the carrier with no weak spot), with ties broken by the average score, then price. That is Carrier B on every route (A scores 0 on speed and reliability, C scores 0 on cost).
 - **R-05 eligibility:** a carrier is eligible only if weight per pallet ≤ its max. The first eligible carrier in priority order wins. If none is eligible, the priority's first choice is shown and R-05 is Red.
 - **Override:** the seller can pick any carrier ("use carrier B" or the card buttons) and switch back to the recommendation.
 

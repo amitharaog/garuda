@@ -76,9 +76,9 @@ test('one-click fixes, carrier override, confirm, and Fix in chat syncing back',
 test('downloads the corrected workbook and the issues report', async ({ page }) => {
   await page.goto('/#file');
   const [fixed] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download corrected file' }).click()]);
-  expect(fixed.suggestedFilename()).toBe('preflight-corrected-bookings.xlsx');
+  expect(fixed.suggestedFilename()).toBe('garuda-corrected-bookings.xlsx');
   const [report] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download issues report' }).click()]);
-  expect(report.suggestedFilename()).toBe('preflight-issues-report.xlsx');
+  expect(report.suggestedFilename()).toBe('garuda-issues-report.xlsx');
 });
 
 test('rules tab has the rulebook and no rate card', async ({ page }) => {

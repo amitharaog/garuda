@@ -171,8 +171,8 @@ export function App() {
       <header className="top">
         <div className="wrap">
           <div className="brand">
-            <h1>Pre<span>/</span>Flight</h1>
-            <span className="route">UK → DE · FR · NL &nbsp;|&nbsp; book · check · fix before it ships</span>
+            <h1>Garuda<span>.</span></h1>
+            <span className="route">Pre-flight shipment checker &nbsp;|&nbsp; UK → DE · FR · NL</span>
           </div>
           <nav className="tabs" role="tablist" aria-label="Views">
             {VIEWS.map(([v, label]) => (

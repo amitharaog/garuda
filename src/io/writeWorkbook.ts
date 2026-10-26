@@ -10,8 +10,8 @@ export const I_HEAD = ['Booking ID', 'SKU', 'Description', 'HS code', 'Quantity 
 const hsCell = (hs: string): string | number | null => (hs === '' ? null : /^\d+$/.test(hs) && !hs.startsWith('0') ? Number(hs) : hs);
 
 export function bookingsWorkbook(bookings: Booking[]): XLSX.WorkBook {
-  const bRows: unknown[][] = [['Bookings: corrected by Pre-Flight. Same columns as the template.'], B_HEAD];
-  const iRows: unknown[][] = [['Items: corrected by Pre-Flight. Same columns as the template.'], I_HEAD];
+  const bRows: unknown[][] = [['Bookings: corrected by Garuda. Same columns as the template.'], B_HEAD];
+  const iRows: unknown[][] = [['Items: corrected by Garuda. Same columns as the template.'], I_HEAD];
   for (const b of bookings) {
     bRows.push([b.id, b.seller, b.originCity, b.originCountry, b.destCity, b.destCountry, b.destType, b.readyDate, b.priority, b.pallets, b.cartons, b.declaredValue, b.currency, b.grossWeight, b.appointment]);
     for (const it of b.items) iRows.push([b.id, it.sku, it.description, hsCell(it.hs), it.qty, it.unitPrice, it.upc, it.cartons, it.unitWeight, it.origin || null]);

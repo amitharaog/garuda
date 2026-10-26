@@ -159,8 +159,8 @@ export function FileView({ fs, results, act }: { fs: FileState; results: CheckRe
               <div className="sum-foot">
                 <span className="muted">Freight at recommended carriers: <b className="num">{money(cost)}</b></span>
                 <div className="row">
-                  <button type="button" className="btn small" onClick={() => downloadWorkbook(w => w.reportWorkbook(results), 'preflight-issues-report.xlsx')}>Download issues report</button>
-                  <button type="button" className="btn small" onClick={() => downloadWorkbook(w => w.bookingsWorkbook(fs.bookings), 'preflight-corrected-bookings.xlsx')}>Download corrected file</button>
+                  <button type="button" className="btn small" onClick={() => downloadWorkbook(w => w.reportWorkbook(results), 'garuda-issues-report.xlsx')}>Download issues report</button>
+                  <button type="button" className="btn small" onClick={() => downloadWorkbook(w => w.bookingsWorkbook(fs.bookings), 'garuda-corrected-bookings.xlsx')}>Download corrected file</button>
                   <button type="button" className="btn small" onClick={() => copyText(reportText(results))}>Copy report</button>
                 </div>
               </div>
