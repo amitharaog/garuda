@@ -421,5 +421,12 @@ details.dg ul { margin: 6px 0 0; padding-left: 18px; }
 .bar-fill { box-shadow: none; }
 .btn.mic.on { animation-name: pulse-red; }
 @keyframes pulse-red { 50% { box-shadow: 0 0 0 6px rgba(196, 43, 43, .2); } }
+.btn.mic { width: 44px; height: 44px; padding: 0; justify-content: center; flex: none; }
+.mic-stop { width: 12px; height: 12px; border-radius: 2px; background: currentColor; }
+.voice-status { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--line); background: #fdf3f3; font-size: 13.5px; }
+.voice-status span:nth-child(2) { flex: 1; }
+.voice-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--red); flex: none; animation: voice-blink 1s ease-in-out infinite; }
+@keyframes voice-blink { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .voice-dot { animation: none; } }
 .paste-area:focus { border-color: var(--ink); box-shadow: none; }
 .starter.repeat { border-color: var(--accent); }

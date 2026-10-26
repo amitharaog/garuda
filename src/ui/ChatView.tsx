@@ -8,6 +8,7 @@ import { IssueList, StatusBar, isBlocking } from './components/results';
 import { NextSteps, ShippingLabel } from './components/confirmation';
 import { BookingPanel } from './BookingPanel';
 import { toast } from './util';
+import { bestAlternative, mergeSegments, normalizeSpeech } from '../chat/speech';
 
 export type LogEntry = { id: number } & ({ role: 'user'; text: string } | { role: 'bot'; msg: BotMessage } | { role: 'greet' });
 
@@ -108,42 +109,100 @@ function Greeting({ act, conv }: { act: ChatActions; conv: Conversation }) {
   );
 }
 
+interface Alternative { transcript: string }
+interface RecResult { isFinal: boolean; length: number; [i: number]: Alternative }
 type Recognition = {
-  lang: string; interimResults: boolean; continuous: boolean;
-  onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  lang: string; interimResults: boolean; continuous: boolean; maxAlternatives: number;
+  onresult: ((e: { resultIndex: number; results: ArrayLike<RecResult> }) => void) | null;
   onend: (() => void) | null; onerror: ((e: { error: string }) => void) | null;
-  start: () => void; stop: () => void;
+  start: () => void; stop: () => void; abort: () => void;
 };
 const speechCtor = (): (new () => Recognition) | null => {
   const w = window as unknown as { SpeechRecognition?: new () => Recognition; webkitSpeechRecognition?: new () => Recognition };
   return w.SpeechRecognition || w.webkitSpeechRecognition || null;
 };
+/** Stop listening after this long without new words, and never listen longer than MAX_MS. */
+const SILENCE_MS = 1800;
+const MAX_MS = 45000;
+const SPEECH_ERRORS: Record<string, string> = {
+  'not-allowed': 'Microphone access was blocked. Allow it in the browser’s site settings to book by voice.',
+  'service-not-allowed': 'Microphone access was blocked. Allow it in the browser’s site settings to book by voice.',
+  'audio-capture': 'No microphone was found.',
+  network: 'Voice needs an internet connection for speech recognition.',
+  'no-speech': 'I didn’t hear anything. Tap the microphone and try again.',
+};
 
-/** Dictate a message with the browser's speech recognition (hidden where the browser has none). */
-function VoiceButton({ onText }: { onText: (t: string) => void }) {
+/** Book by voice: listens through pauses, shows the words live, stops after a short silence and sends what was said,
+    rewritten the way people type it (numbers, prices, weights, dates, city names). Esc cancels. */
+function useVoice(onLive: (t: string) => void, onDone: (t: string) => void) {
   const [on, setOn] = useState(false);
   const rec = useRef<Recognition | null>(null);
-  const Ctor = speechCtor();
-  if (!Ctor) return null;
-  const toggle = () => {
-    if (on) { rec.current?.stop(); return; }
+  const cancelled = useRef(false);
+  const timers = useRef<{ silence?: number; max?: number }>({});
+  const supported = typeof window !== 'undefined' && !!speechCtor();
+
+  const clear = () => { window.clearTimeout(timers.current.silence); window.clearTimeout(timers.current.max); };
+  const stop = () => rec.current?.stop();
+  const cancel = () => { cancelled.current = true; rec.current?.abort(); };
+
+  const start = () => {
+    const Ctor = speechCtor();
+    if (!Ctor || on) return;
     const r = new Ctor();
     r.lang = 'en-GB';
-    r.interimResults = false;
-    r.continuous = false;
-    r.onresult = e => onText(Array.from(e.results).map(x => x[0].transcript).join(' '));
-    r.onend = () => setOn(false);
-    r.onerror = e => { setOn(false); if (e.error === 'not-allowed') toast('Microphone access was blocked'); };
+    r.continuous = true;
+    r.interimResults = true;
+    r.maxAlternatives = 3;
+    const finals: string[] = [];
+    let interim = '';
+    cancelled.current = false;
+    r.onresult = e => {
+      interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const res = e.results[i];
+        const alts = Array.from({ length: res.length }, (_, k) => res[k].transcript);
+        if (res.isFinal) finals[i] = bestAlternative(alts);
+        else interim = mergeSegments([interim, alts[0]]);
+      }
+      onLive(mergeSegments([...finals.filter(Boolean), interim]));
+      window.clearTimeout(timers.current.silence);
+      timers.current.silence = window.setTimeout(stop, SILENCE_MS);
+    };
+    r.onerror = e => {
+      if (e.error === 'aborted') return;
+      const msg = SPEECH_ERRORS[e.error];
+      if (msg) toast(msg);
+    };
+    r.onend = () => {
+      clear();
+      setOn(false);
+      rec.current = null;
+      if (cancelled.current) { onLive(''); return; }
+      const heard = mergeSegments([...finals.filter(Boolean), interim]);
+      onDone(heard ? normalizeSpeech(heard) : '');
+    };
     rec.current = r;
     setOn(true);
-    r.start();
+    timers.current.max = window.setTimeout(stop, MAX_MS);
+    try { r.start(); } catch { setOn(false); }
   };
-  return (
-    <button type="button" className={`btn mic ${on ? 'on' : ''}`} onClick={toggle} aria-pressed={on} aria-label={on ? 'Stop voice input' : 'Start voice input'} title={on ? 'Listening… click to stop' : 'Speak your shipment'}>
-      {on ? '■' : '🎤'}
-    </button>
-  );
+
+  useEffect(() => {
+    if (!on) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') cancel(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [on]);
+  useEffect(() => () => { clear(); rec.current?.abort(); }, []);
+
+  return { supported, on, start, stop, cancel };
 }
+
+const MicIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+  </svg>
+);
 
 /** Paste an order email or note; it goes through the same language understanding as typed messages. */
 function PasteModal({ onSend, onClose }: { onSend: (t: string) => void; onClose: () => void }) {
@@ -183,6 +242,20 @@ export function ChatView({ conv, log, act, version }: { conv: Conversation; log:
     if (el) el.scrollTop = el.scrollHeight;
   }, [log]);
 
+  // Voice: the words appear in the box as they are heard, and are sent when the speaker pauses.
+  const voiceBase = useRef('');
+  const voice = useVoice(
+    live => setDraft(live ? (voiceBase.current ? voiceBase.current + ' ' : '') + live : voiceBase.current),
+    said => {
+      const base = voiceBase.current;
+      voiceBase.current = '';
+      if (!said) { setDraft(base); return; } // heard nothing: keep what was typed, send nothing
+      setDraft('');
+      act.send([base, said].filter(Boolean).join(' '));
+    },
+  );
+  const startVoice = () => { voiceBase.current = draft.trim(); voice.start(); };
+
   const submit = () => {
     const t = draft.trim();
     if (!t) return;
@@ -209,10 +282,18 @@ export function ChatView({ conv, log, act, version }: { conv: Conversation; log:
             </div>
           ))}
         </div>
+        {voice.on && (
+          <div className="voice-status" role="status">
+            <span className="voice-dot" aria-hidden="true" />
+            <span>Listening… say the whole shipment. I’ll send it when you pause.</span>
+            <button type="button" className="btn small" onClick={voice.cancel}>Cancel</button>
+          </div>
+        )}
         <form className="composer" onSubmit={e => { e.preventDefault(); submit(); }}>
           <label htmlFor="chat-input" className="sr-only">Message</label>
           <textarea
-            id="chat-input" ref={inputRef} rows={1} value={draft} placeholder="Type your shipment details or answer…"
+            id="chat-input" ref={inputRef} rows={1} value={draft} readOnly={voice.on}
+            placeholder={voice.on ? 'Listening…' : 'Type or speak your shipment details…'}
             onChange={e => {
               setDraft(e.target.value);
               e.target.style.height = 'auto';
@@ -220,8 +301,13 @@ export function ChatView({ conv, log, act, version }: { conv: Conversation; log:
             }}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }}
           />
-          <VoiceButton onText={t => setDraft(d => (d ? d + ' ' : '') + t)} />
-          <button className="btn primary" type="submit">Send</button>
+          {voice.supported && (
+            <button type="button" className={`btn mic ${voice.on ? 'on' : ''}`} onClick={voice.on ? voice.stop : startVoice}
+              aria-pressed={voice.on} aria-label={voice.on ? 'Stop and send' : 'Speak your shipment'} title={voice.on ? 'Stop and send' : 'Speak your shipment'}>
+              {voice.on ? <span className="mic-stop" aria-hidden="true" /> : <MicIcon />}
+            </button>
+          )}
+          <button className="btn primary" type="submit" disabled={voice.on}>Send</button>
         </form>
       </div>
       <BookingPanel conv={conv} act={act} version={version} />
