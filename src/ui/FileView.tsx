@@ -151,12 +151,13 @@ export function FileView({ fs, results, act }: { fs: FileState; results: CheckRe
               ref={inputRef} type="file" accept=".xlsx,.xls,.csv" multiple hidden data-testid="file-input"
               onChange={e => { const f = e.currentTarget.files; if (f && f.length) act.load([...f]); e.currentTarget.value = ''; }}
             />
-            <button type="button" className="btn" onClick={act.loadSample}>Load sample (9 bookings, planted mistakes)</button>
+            <button type="button" className="btn" onClick={act.loadSample} title="9 bookings with planted mistakes">Use the sample file</button>
+            <a className="btn" href="/Preflight_Sample_Test_Data.xlsx" download>Download sample file</a>
           </div>
           <p style={{ fontSize: 13 }}>
             Or drop the file here. Files are read in your browser; nothing is uploaded to a server.{' '}
-            Get the <a className="link" href="/Case2_Shipment_Booking_Test_Data_Format.xlsx" download>blank template</a> or the{' '}
-            <a className="link" href="/Preflight_Sample_Test_Data.xlsx" download>sample workbook</a>.
+            The sample has 9 bookings with planted mistakes. Starting your own? Get the{' '}
+            <a className="link" href="/Case2_Shipment_Booking_Test_Data_Format.xlsx" download>blank template</a>.
           </p>
         </div>
         <div className="panel" id="file-summary" data-testid="file-summary">

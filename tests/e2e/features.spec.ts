@@ -77,7 +77,7 @@ test('insights: scorecards, what-if and risk', async ({ page }) => {
 });
 
 test('paste an order, remember it, then repeat the last booking', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/#chat');
   await page.getByRole('button', { name: 'Paste order' }).click();
   await page.getByLabel('Order text').fill("We're Northfield Goods. 3 pallets of ceramic coffee mugs from Manchester to an Amazon warehouse in Frankfurt, 1080 mugs at £5 each, 12 per carton, 0.5 kg each.\nReady 12-11-2026, cheapest please.");
   await page.getByRole('button', { name: 'Read this order' }).click();

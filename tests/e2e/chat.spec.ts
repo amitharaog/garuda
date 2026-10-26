@@ -11,7 +11,7 @@ async function say(page: Page, text: string) {
 }
 
 test('chat flow: asks only for what is missing, re-runs checks, undo and confirm', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/#chat');
   await expect(page.getByRole('tab', { name: 'Book by chat' })).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByText('Or try an example')).toBeVisible();
 
@@ -60,7 +60,7 @@ test('chat flow: asks only for what is missing, re-runs checks, undo and confirm
 });
 
 test('panel edits flow back into the chat, and red bookings cannot be confirmed', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/#chat');
   await page.getByRole('button', { name: /We're Northfield Goods/ }).click();
   for (const t of ['691200', 'UK', "that's everything", '620', 'yes']) await say(page, t);
   const panel = page.getByTestId('booking-panel');

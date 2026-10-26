@@ -28,7 +28,7 @@ Pre-flight shipment checker: conversational shipment booking and error checking 
 
 Not built, because each needs a server, credentials or carrier contracts: live carrier rate and booking APIs, tracking after collection, team accounts with shared booking history, and email/Slack alerts.
 
-The look is dark-first (near-black surfaces, one electric blue `#0016CB` with glow, oversized Inter Tight headings) with a light mode behind the toggle in the header; the choice is remembered per browser.
+The site has two pages. **Home** (`/`) introduces Garuda as one long scroll: a dark hero with a dotted globe and the UK → DE / FR / NL lanes, then a scroll-driven journey (a reach stacker loads a container onto a truck, the truck drives through the services and onto a top-down road, onto a ship at sea, up through the clouds to a plane), sample cases, carriers, the rulebook, FAQ and footer. **Book a shipment** (`/#chat`, `/#file`, `/#insights`, `/#rules`) is the working console. All artwork is original SVG/canvas, scrubbed by scroll in `src/ui/site/`; motion is eased per scene and respects reduced-motion.
 
 Everything runs in the browser. No login, no API key and no backend. The same input always gives the same result.
 

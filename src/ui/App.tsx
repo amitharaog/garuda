@@ -16,16 +16,33 @@ import { FileView } from './FileView';
 import type { FileActions, FileState } from './FileView';
 import { RulesView } from './RulesView';
 import { InsightsView } from './InsightsView';
+import { BookingsView } from './BookingsView';
+import type { BookingsActions } from './BookingsView';
+import { entryFor, loadHistory, recordBooking, removeBooking } from '../io/history';
+import type { SavedBooking } from '../io/history';
 import { InvoiceModal } from './components/InvoiceModal';
 import { PrintModal } from './components/PrintModal';
 import { copyText, safeStorage, toast } from './util';
+import { Header, Loader } from './site/Chrome';
+import { Carriers, Cases, Faq, Footer, Hero, Intro, RulesBand } from './site/Sections';
+import { JourneyLoad, JourneySea, JourneySky } from './site/Journey';
+import { initSmoothScroll, reducedMotion, scrollToEl } from './site/motion';
+import './site/site.css';
 
-type View = 'chat' | 'file' | 'insights' | 'rules';
-const VIEWS: Array<[View, string]> = [['chat', 'Book by chat'], ['file', 'Check a file'], ['insights', 'Insights'], ['rules', 'Rules']];
+type View = 'chat' | 'file' | 'bookings' | 'insights' | 'rules';
+type Page = 'home' | 'book';
+type Section = 'book' | 'bookings' | 'insights' | 'rules';
+/** Top-level sections of the booking page; "Book a shipment" holds the two ways to book (chat or file). */
+const SECTIONS: Array<[Section, string]> = [['book', 'Book a shipment'], ['bookings', 'My bookings'], ['insights', 'Insights'], ['rules', 'Rules']];
+const MODES: Array<[View, string, string]> = [['chat', 'Book by chat', 'Describe it in plain words'], ['file', 'Check a file', 'Upload a workbook or CSVs']];
+const sectionOf = (v: View): Section => (v === 'chat' || v === 'file' ? 'book' : v);
+const hash = () => (typeof location !== 'undefined' ? location.hash : '').slice(1);
 const viewFromHash = (): View => {
-  const h = (typeof location !== 'undefined' ? location.hash : '').slice(1);
-  return h === 'file' || h === 'rules' || h === 'insights' ? h : 'chat';
+  const h = hash();
+  return h === 'file' || h === 'rules' || h === 'insights' || h === 'bookings' ? h : 'chat';
 };
+/** Home is `/`; the booking page is any console view (#chat, #file, #insights, #rules) or a shared booking. */
+const pageFromHash = (): Page => (/^(chat|file|bookings|insights|rules)$/.test(hash()) || hash().startsWith(SHARE_PREFIX) ? 'book' : 'home');
 
 function fileStateFrom(read: ReadResult, name: string): FileState {
   const firstRed = read.bookings.find(b => check(b).status === 'Red') || read.bookings[0];
@@ -49,28 +66,75 @@ export function App() {
   const [fileLink, setFileLink] = useState<string | null>(null);
   const [invoice, setInvoice] = useState<{ booking: Booking; result: CheckResult } | null>(null);
   const [printing, setPrinting] = useState<{ result: CheckResult; reference: string | null } | null>(null);
+  const [pastBookings, setPastBookings] = useState<SavedBooking[]>(() => loadHistory(storage));
+  /** Which way to book was used last, so "Book a shipment" reopens it. */
+  const bookMode = useRef<View>(viewFromHash() === 'file' ? 'file' : 'chat');
 
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => (document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'));
-  const toggleTheme = () => {
-    const next = theme === 'dark' ? 'light' : 'dark';
-    setTheme(next);
-    document.documentElement.dataset.theme = next;
-    try { localStorage.setItem('pf-theme', next); } catch { /* storage blocked */ }
-  };
+  const [page, setPage] = useState<Page>(pageFromHash);
+  const [wipe, setWipe] = useState<'idle' | 'in' | 'out'>('idle');
   const closeInvoice = useCallback(() => setInvoice(null), []);
   const closePrint = useCallback(() => setPrinting(null), []);
   const results = useMemo(() => fs.bookings.map(b => check(b, { carrierOverride: fs.overrides[b.id] })), [fs.bookings, fs.overrides]);
 
-  const show = useCallback((v: View) => {
-    setView(v);
-    try { history.replaceState(null, '', '#' + v); } catch { /* sandboxed */ }
-    window.scrollTo(0, 0);
+  /** Change page behind a circle wipe, like the reference site's page transition. */
+  const pendingScroll = useRef<string | null>(null);
+  const goPage = useCallback((next: Page, url: string, anchor: string | null = null) => {
+    const swap = () => {
+      try { history.pushState(null, '', url); } catch { /* sandboxed */ }
+      pendingScroll.current = anchor;
+      setPage(next);
+      if (!anchor) window.scrollTo(0, 0);
+    };
+    if (reducedMotion()) { swap(); return; }
+    setWipe('in');
+    setTimeout(() => { swap(); setWipe('out'); }, 520);
+    setTimeout(() => setWipe('idle'), 1250);
   }, []);
+  // After a page change, jump to the requested home section.
   useEffect(() => {
-    const onHash = () => { if (!location.hash.startsWith('#' + SHARE_PREFIX)) setView(viewFromHash()); };
-    window.addEventListener('hashchange', onHash);
-    return () => window.removeEventListener('hashchange', onHash);
+    const id = pendingScroll.current;
+    if (!id) return;
+    pendingScroll.current = null;
+    const el = document.getElementById(id);
+    if (el) window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 60);
+  }, [page]);
+
+  /** Switch the console view; from the home page this opens the booking page. */
+  const show = useCallback((v: View) => {
+    if (v === 'chat' || v === 'file') bookMode.current = v;
+    setView(v);
+    if (pageFromHash() === 'book') {
+      try { history.replaceState(null, '', '#' + v); } catch { /* sandboxed */ }
+      window.scrollTo(0, 0);
+    } else goPage('book', '#' + v);
+  }, [goPage]);
+  const home = useCallback((anchor: string | null = null) => {
+    if (pageFromHash() === 'home') {
+      const el = anchor ? document.getElementById(anchor) : null;
+      if (el) scrollToEl(el, -60); else window.scrollTo({ top: 0, behavior: reducedMotion() ? 'auto' : 'smooth' });
+    } else goPage('home', location.pathname + location.search, anchor);
+  }, [goPage]);
+  useEffect(() => {
+    initSmoothScroll();
+    const onNav = () => {
+      setPage(pageFromHash());
+      if (!location.hash.startsWith('#' + SHARE_PREFIX)) setView(viewFromHash());
+    };
+    window.addEventListener('hashchange', onNav);
+    window.addEventListener('popstate', onNav);
+    return () => { window.removeEventListener('hashchange', onNav); window.removeEventListener('popstate', onNav); };
   }, []);
+  const links = [
+    { label: 'Home', go: () => home() },
+    { label: 'Book a shipment', go: () => show('chat') },
+    { label: 'My bookings', go: () => show('bookings') },
+    { label: 'Check a file', go: () => show('file') },
+    { label: 'Insights', go: () => show('insights') },
+    { label: 'Rules', go: () => show('rules') },
+    { label: 'How it works', go: () => home('how') },
+    { label: 'Carriers', go: () => home('carriers') },
+    { label: 'FAQ', go: () => home('faq') },
+  ];
 
   /** Push the chat's booking back into the file results while "Fix in chat" is active. */
   const syncBack = useCallback(() => {
@@ -96,7 +160,10 @@ export function App() {
       console.error(e);
       out = [{ kind: 'text', html: 'Something went wrong reading that. Try rephrasing, or edit the field in the booking panel.' }];
     }
-    if (out.some(m => m.kind === 'confirmation')) conv.setMemory(rememberBooking(storage, normalizeBooking(conv.toBooking())));
+    if (out.some(m => m.kind === 'confirmation')) {
+      conv.setMemory(rememberBooking(storage, normalizeBooking(conv.toBooking())));
+      if (conv.confirmed) setPastBookings(recordBooking(storage, entryFor(conv.confirmed, conv.result(), conv.carrierOverride, 'chat')));
+    }
     const entries: LogEntry[] = [];
     if (userText) entries.push({ id: nextId.current++, role: 'user', text: userText });
     out.forEach(msg => entries.push({ id: nextId.current++, role: 'bot', msg }));
@@ -209,6 +276,7 @@ export function App() {
       const ref = 'PF-' + fs.sel.replace(/\W/g, '') + '-' + Math.random().toString(36).slice(2, 6).toUpperCase();
       setFs(s => ({ ...s, confirmed: { ...s.confirmed, [fs.sel as string]: ref } }));
       conv.setMemory(rememberBooking(storage, r.booking));
+      setPastBookings(recordBooking(storage, entryFor(ref, r, fs.overrides[r.booking.id] || null, 'file')));
       toast('Booking confirmed');
     },
     fixInChat: id => {
@@ -234,50 +302,95 @@ export function App() {
     },
   };
 
+  const saved = (e: SavedBooking) => {
+    const booking = normalizeBooking(e.booking);
+    return { booking, result: check(booking, { carrierOverride: e.carrierOverride }) };
+  };
+  const bookings: BookingsActions = {
+    open: e => {
+      setFileLink(null);
+      const msgs = conv.loadBooking(normalizeBooking(e.booking), { carrierOverride: e.carrierOverride, confirmed: e.ref, source: 'history' });
+      setLog(msgs.map(msg => ({ id: nextId.current++, role: 'bot' as const, msg })));
+      setVersion(v => v + 1);
+      show('chat');
+    },
+    print: e => setPrinting({ result: saved(e).result, reference: e.ref }),
+    invoice: e => setInvoice(saved(e)),
+    share: e => share(saved(e).booking, e.carrierOverride),
+    remove: ref => { setPastBookings(removeBooking(storage, ref)); toast(`Removed ${ref} from your bookings`); },
+    newBooking: () => show('chat'),
+    checkFile: () => show('file'),
+  };
+  const section = sectionOf(view);
+
   return (
     <>
-      <header className="top">
-        <div className="wrap">
-          <div className="brand">
-            <h1>Garuda<span>.</span></h1>
-            <span className="route">Pre-flight shipment checker &nbsp;|&nbsp; UK → DE · FR · NL</span>
-          </div>
-          <nav className="tabs" role="tablist" aria-label="Views">
-            {VIEWS.map(([v, label]) => (
-              <button key={v} type="button" role="tab" id={`tab-${v}`} aria-controls={`view-${v}`} aria-selected={view === v} onClick={() => show(v)}>{label}</button>
-            ))}
-          </nav>
-          <button type="button" className="theme-toggle" onClick={toggleTheme} aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} title={theme === 'dark' ? 'Light mode' : 'Dark mode'}>
-            {theme === 'dark' ? '☀' : '☾'}
-          </button>
-        </div>
-      </header>
-      <section className="hero wrap" aria-labelledby="hero-title">
-        <span className="eyebrow">UK → Germany · France · Netherlands road freight</span>
-        <h2 className="hero-title" id="hero-title">Catch it <span>before</span> it ships.</h2>
-        <div className="hero-row">
-          <p className="hero-sub">Book by chat or drop in a file. Every booking is checked against the 10-rule rulebook, matched to the right carrier and confirmed in one place.</p>
-          <div className="hero-stats" aria-label="At a glance">
-            <div><b>10</b><span>Rulebook checks</span></div>
-            <div><b>3</b><span>Carriers compared</span></div>
-            <div><b>0</b><span>Logins or API keys</span></div>
-          </div>
-        </div>
-      </section>
-      <main className="wrap">
-        <section className="view" id="view-chat" role="tabpanel" aria-labelledby="tab-chat" hidden={view !== 'chat'}>
-          <ChatView conv={conv} log={log} act={chat} version={version} />
-        </section>
-        <section className="view" id="view-file" role="tabpanel" aria-labelledby="tab-file" hidden={view !== 'file'}>
-          <FileView fs={fs} results={results} act={file} />
-        </section>
-        <section className="view" id="view-insights" role="tabpanel" aria-labelledby="tab-insights" hidden={view !== 'insights'}>
-          <InsightsView results={results} bookings={fs.bookings} overrides={fs.overrides} name={fs.name} onOpen={id => { file.select(id); show('file'); }} />
-        </section>
-        <section className="view" id="view-rules" role="tabpanel" aria-labelledby="tab-rules" hidden={view !== 'rules'}>
-          <RulesView />
-        </section>
-      </main>
+      {page === 'home' && <Loader />}
+      <Header links={links} current={page === 'home' ? 'Home' : 'Book a shipment'} solid={page === 'book'} onCta={() => show('chat')} />
+      {page === 'home' ? (
+        <>
+          <Hero onChat={() => show('chat')} onFile={() => show('file')} />
+          <Intro onRules={() => show('rules')} />
+          <JourneyLoad go={show} />
+          <JourneySea />
+          <JourneySky />
+          <Cases />
+          <Carriers />
+          <RulesBand onAll={() => show('rules')} />
+          <Faq onChat={() => show('chat')} />
+          <Footer links={links.slice(0, 6)} current="Home" onChat={() => show('chat')} />
+        </>
+      ) : (
+        <>
+          <section className="console book-page" id="console" data-header="light" aria-labelledby="console-title">
+            <div className="console-head wrap">
+              <div>
+                <nav className="crumbs mono-s" aria-label="Breadcrumb">
+                  <button type="button" onClick={() => home()}>HOME</button><span>/</span><span>BOOK A SHIPMENT</span>
+                </nav>
+                <h1 className="h1 two-tone" id="console-title"><span className="mute">BOOK IT. CHECK IT.</span> <span>SHIP IT.</span></h1>
+                <p className="console-sub">Describe a shipment in plain words or drop in a file. Every booking is checked against the 10-rule rulebook, matched to a carrier and confirmed in one place.</p>
+              </div>
+              <nav className="tabs" role="tablist" aria-label="Sections">
+                {SECTIONS.map(([sec, label]) => (
+                  <button key={sec} type="button" role="tab" id={`tab-${sec}`} aria-controls={`section-${sec}`} aria-selected={section === sec}
+                    onClick={() => show(sec === 'book' ? bookMode.current : sec)}>
+                    {label}{sec === 'bookings' && pastBookings.length > 0 && <span className="tab-count">{pastBookings.length}</span>}
+                  </button>
+                ))}
+              </nav>
+            </div>
+            <main className="wrap">
+              <section id="section-book" role="tabpanel" aria-labelledby="tab-book" hidden={section !== 'book'}>
+                <div className="book-modes" role="tablist" aria-label="How to book">
+                  {MODES.map(([v, label, hint]) => (
+                    <button key={v} type="button" role="tab" id={`tab-${v}`} aria-controls={`view-${v}`} aria-selected={view === v} onClick={() => show(v)}>
+                      <b>{label}</b><span>{hint}</span>
+                    </button>
+                  ))}
+                </div>
+                <section className="view" id="view-chat" role="tabpanel" aria-labelledby="tab-chat" hidden={view !== 'chat'}>
+                  <ChatView conv={conv} log={log} act={chat} version={version} />
+                </section>
+                <section className="view" id="view-file" role="tabpanel" aria-labelledby="tab-file" hidden={view !== 'file'}>
+                  <FileView fs={fs} results={results} act={file} />
+                </section>
+              </section>
+              <section className="view" id="section-bookings" role="tabpanel" aria-labelledby="tab-bookings" hidden={view !== 'bookings'}>
+                <BookingsView history={pastBookings} act={bookings} />
+              </section>
+              <section className="view" id="view-insights" role="tabpanel" aria-labelledby="tab-insights" hidden={view !== 'insights'}>
+                <InsightsView results={results} bookings={fs.bookings} overrides={fs.overrides} name={fs.name} onOpen={id => { file.select(id); show('file'); }} />
+              </section>
+              <section className="view" id="view-rules" role="tabpanel" aria-labelledby="tab-rules" hidden={view !== 'rules'}>
+                <RulesView />
+              </section>
+            </main>
+          </section>
+          <Footer links={links.slice(0, 6)} current="Book a shipment" onChat={() => show('chat')} cta={false} />
+        </>
+      )}
+      <div className={`wipe ${wipe}`} aria-hidden="true" />
       {invoice && <InvoiceModal booking={invoice.booking} result={invoice.result} onClose={closeInvoice} />}
       {printing && <PrintModal result={printing.result} reference={printing.reference} onClose={closePrint} />}
     </>
