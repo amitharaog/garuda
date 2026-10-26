@@ -14,3 +14,4 @@ export * from './impact';
 export * from './optimize';
 export * from './diff';
 export * from './insights';
+export * from './plausibility';

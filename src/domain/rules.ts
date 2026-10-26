@@ -6,6 +6,7 @@ import { holidayName } from './holidays';
 import { hsDigits, suggestHS } from './hs';
 import { detectDG, detectDGSoft } from './dangerousGoods';
 import { recommendCarrier } from './carriers';
+import { MAX_CARTON_KG, gramsAsKg, maxUnitKg } from './plausibility';
 import { normalizeBooking } from './normalize';
 import type { Booking, CheckOptions, CheckResult, Fix, Issue, Item, RawBooking, Severity } from './types';
 
@@ -282,6 +283,46 @@ export function check(input: Booking | RawBooking, opts: CheckOptions = {}): Che
       fix: b.destType === 'Warehouse' ? `Book the delivery slot for ${niceDate(nextWorkingDay(eta, b.destCountry))}.` : 'Tell the receiver to expect it on the next working day.',
     });
   }
+
+  // X-14..X-17 plausibility: values that pass the rulebook but cannot be right
+  items.forEach((it, i) => {
+    const cap = maxUnitKg(it);
+    if (it.unitWeight !== null && cap !== null && it.unitWeight > cap) {
+      const g = gramsAsKg(it);
+      add('X-14', {
+        severity: 'Amber', ruleText: 'Unit weights should be believable for the product', title: 'Unit weight looks wrong',
+        what: `${itemLabel(it, i)} is entered as ${kg(it.unitWeight)} each, which is not believable for this product (normally under ${cap} kg). ${g !== null ? `It looks like grams were typed as kilograms: ${fmtNum(it.unitWeight)} g is ${kg(g)}.` : ''} Everything weight-based (gross weight, pallets, carrier choice) depends on it.`.trim(),
+        fix: g !== null ? `Set the unit weight to ${kg(g)}, then re-check the gross weight and pallet count.` : 'Weigh one unit and correct the unit weight.',
+        itemIndex: i,
+        fixes: g !== null ? [{ label: `Set unit weight to ${kg(g)}`, action: { type: 'setItem', index: i, field: 'unitWeight', value: g } }] : [],
+      });
+    }
+    if (it.unitWeight !== null && it.upc) {
+      const cartonKg = it.unitWeight * it.upc;
+      if (cartonKg > MAX_CARTON_KG)
+        add('X-15', {
+          severity: 'Amber', ruleText: 'A carton should be light enough to handle', title: 'Carton far too heavy',
+          what: `${itemLabel(it, i)}: ${fmtNum(it.upc)} units × ${kg(it.unitWeight)} = ${kg(cartonKg)} per carton. Cartons are normally kept under about 25 kg so one person can lift them; ${kg(cartonKg)} usually means a unit weight or pack size is wrong.`,
+          fix: 'Check the unit weight (grams vs kilograms) and the units per carton.', itemIndex: i,
+        });
+    }
+  });
+  if (b.pallets !== null && b.cartons !== null && b.cartons > 0 && b.pallets > b.cartons) {
+    const byWeight = b.grossWeight && ch ? Math.ceil(b.grossWeight / ch.c.maxKg - 1e-9) : 1;
+    const suggest = Math.max(1, Math.min(b.cartons, byWeight));
+    add('X-16', {
+      severity: 'Amber', ruleText: 'Every pallet should carry at least one carton', title: 'More pallets than cartons',
+      what: `${plural(b.pallets, 'pallet')} for only ${plural(b.cartons, 'carton')}: at least ${plural(b.pallets - b.cartons, 'pallet')} would be empty, and you would pay for ${b.pallets - b.cartons} more pallet${b.pallets - b.cartons === 1 ? '' : 's'} than you can fill.`,
+      fix: suggest < b.pallets ? `Use fewer pallets (${suggest} by weight), after checking the gross weight is right.` : 'Check the pallet and carton counts.',
+      fixes: suggest < b.pallets ? [{ label: `Use ${suggest} pallet${suggest === 1 ? '' : 's'}`, action: { type: 'setBooking', field: 'pallets', value: suggest } }] : [],
+    });
+  }
+  if (ch && ch.cost !== null && b.declaredValue !== null && b.declaredValue > 0 && ch.cost > b.declaredValue)
+    add('X-17', {
+      severity: 'Info', ruleText: 'Freight is usually a fraction of the goods value', title: 'Freight costs more than the goods',
+      what: `Freight is ${money(ch.cost)}, ${(ch.cost / b.declaredValue).toFixed(1)}× the declared value of ${money(b.declaredValue)}. That is unusual for road freight and often points to a wrong weight or pallet count.`,
+      fix: 'Double-check weights and pallets before booking.',
+    });
 
   // Extra checks on route and allowed values
   const cityCountry = CITY_TO_COUNTRY[b.destCity];

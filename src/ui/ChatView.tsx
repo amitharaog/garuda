@@ -8,6 +8,8 @@ import { IssueList, StatusBar, isBlocking } from './components/results';
 import { NextSteps, ShippingLabel } from './components/confirmation';
 import { BookingPanel } from './BookingPanel';
 import { toast } from './util';
+import { liveTranscript } from '../chat/speech';
+import type { SpeechResultLike } from '../chat/speech';
 
 export type LogEntry = { id: number } & ({ role: 'user'; text: string } | { role: 'bot'; msg: BotMessage } | { role: 'greet' });
 
@@ -109,31 +111,42 @@ function Greeting({ act, conv }: { act: ChatActions; conv: Conversation }) {
 }
 
 type Recognition = {
-  lang: string; interimResults: boolean; continuous: boolean;
-  onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  lang: string; interimResults: boolean; continuous: boolean; maxAlternatives: number;
+  onresult: ((e: { results: ArrayLike<SpeechResultLike> }) => void) | null;
   onend: (() => void) | null; onerror: ((e: { error: string }) => void) | null;
-  start: () => void; stop: () => void;
+  start: () => void; stop: () => void; abort: () => void;
 };
 const speechCtor = (): (new () => Recognition) | null => {
   const w = window as unknown as { SpeechRecognition?: new () => Recognition; webkitSpeechRecognition?: new () => Recognition };
   return w.SpeechRecognition || w.webkitSpeechRecognition || null;
 };
 
-/** Dictate a message with the browser's speech recognition (hidden where the browser has none). */
-function VoiceButton({ onText }: { onText: (t: string) => void }) {
+/** Dictate a message with the browser's speech recognition (hidden where the browser has none).
+    The spoken text replaces what was dictated so far on every update, so partial guesses never pile up. */
+function VoiceButton({ draft, onDraft }: { draft: string; onDraft: (t: string) => void }) {
   const [on, setOn] = useState(false);
   const rec = useRef<Recognition | null>(null);
+  useEffect(() => () => rec.current?.abort(), []);
   const Ctor = speechCtor();
   if (!Ctor) return null;
   const toggle = () => {
     if (on) { rec.current?.stop(); return; }
+    const base = draft.trim();
     const r = new Ctor();
     r.lang = 'en-GB';
-    r.interimResults = false;
+    r.interimResults = true;
     r.continuous = false;
-    r.onresult = e => onText(Array.from(e.results).map(x => x[0].transcript).join(' '));
-    r.onend = () => setOn(false);
-    r.onerror = e => { setOn(false); if (e.error === 'not-allowed') toast('Microphone access was blocked'); };
+    r.maxAlternatives = 1;
+    r.onresult = e => {
+      const { final, interim } = liveTranscript(e.results);
+      onDraft([base, final, interim].filter(Boolean).join(' '));
+    };
+    r.onend = () => { setOn(false); rec.current = null; };
+    r.onerror = e => {
+      setOn(false);
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') toast('Microphone access was blocked');
+      else if (e.error === 'no-speech') toast('No speech heard. Try again closer to the microphone');
+    };
     rec.current = r;
     setOn(true);
     r.start();
@@ -220,7 +233,7 @@ export function ChatView({ conv, log, act, version }: { conv: Conversation; log:
             }}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }}
           />
-          <VoiceButton onText={t => setDraft(d => (d ? d + ' ' : '') + t)} />
+          <VoiceButton draft={draft} onDraft={setDraft} />
           <button className="btn primary" type="submit">Send</button>
         </form>
       </div>
