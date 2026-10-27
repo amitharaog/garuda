@@ -236,3 +236,30 @@ Thanks`);
     expect(c.b.items[0]).toMatchObject({ qty: 600, unitPrice: 6, upc: 20, unitWeight: 0.15, origin: 'Turkey', cartons: 30 });
   });
 });
+
+describe('a product line with no name', () => {
+  const setup = () => {
+    const c = new Conversation();
+    c.handle("We're Harbour Tech. 3 pallets of power banks from London to a warehouse in Amsterdam, 20000 power banks. Ready 12-11-2026, cheapest, slot booked.");
+    c.editField('hs', '340600', 0);
+    c.addItemFromPanel();
+    c.editField('description', 'USB cables', 1);
+    c.editField('qty', 500, 1);
+    return { c, out: c.editField('description', '', 0) };
+  };
+
+  it('asks for that line by number, not for "the next product"', () => {
+    const { c, out } = setup();
+    expect(asked(out).html).toContain('Line 1 has no product name (20,000 units, HS 340600)');
+    expect(c.missingList()[0]).toBe('line 1: product name, unit price, units per carton, total cartons, unit weight, country of origin');
+  });
+
+  it('puts the answer on that line even when another line is current', () => {
+    const { c } = setup();
+    c.cur = 1;
+    c.handle('power banks');
+    expect(c.b.items.map(i => i.description)).toEqual(['Power banks', 'USB cables']);
+    expect(c.b.items[0].qty).toBe(20000);
+    expect(c.nextMissing()).toEqual({ field: 'unitPrice', item: 0 });
+  });
+});

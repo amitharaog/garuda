@@ -281,8 +281,11 @@ export class Conversation {
       const head = (d: string) => singular(d.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).pop() || '');
       const match = resolveItem(p.description, this.b.items);
       const existing = match !== null && head(this.b.items[match].description) === head(p.description) ? match : null;
-      const curIt = this.b.items[this.cur];
+      // the answer to "what is the product on line N?" names that line
+      const askedFor = this.pending?.field === 'description' && this.pending.item !== undefined ? this.pending.item : null;
+      const curIt = this.b.items[askedFor ?? this.cur];
       if (existing !== null) idx = existing;
+      else if (askedFor !== null && curIt && !curIt.description) idx = askedFor;
       else if (curIt && !curIt.description) idx = this.cur;
       else { this.b.items.push(newItem()); idx = this.b.items.length - 1; if (idx > 0) this.itemsDone = false; }
       const it = this.b.items[idx];
@@ -508,11 +511,12 @@ export class Conversation {
     const add = (c: boolean, l: string) => { if (c) out.push(l); };
     add(!b.seller, 'seller name'); add(!b.originCity, 'collection city'); add(!b.destCity, 'destination city'); add(!b.destType, 'destination type');
     if (!b.items.length) out.push('products');
-    b.items.forEach(it => {
+    b.items.forEach((it, i) => {
       const miss = ITEM_NUM_FIELDS.filter(f => it[f] === null).map(f => FIELD_LABEL[f]);
+      if (!it.description) miss.unshift('product name');
       if (!it.hs && !it._asked.hs) miss.push('HS code');
       if (!it.origin && !it._asked.origin) miss.push('country of origin');
-      if (miss.length) out.push(`${it.description || 'product'}: ${miss.join(', ')}`);
+      if (miss.length) out.push(`${it.description || `line ${i + 1}`}: ${miss.join(', ')}`);
     });
     add(b.pallets === null, 'pallets'); add(b.grossWeight === null, 'gross weight'); add(!b.readyDate, 'ready date'); add(!b.priority, 'priority');
     add(b.destType === 'Warehouse' && !b.appointment, 'delivery appointment');
@@ -543,7 +547,9 @@ export class Conversation {
         chips = ['Warehouse', 'Business address'];
         break;
       case 'description':
-        q = this.b.items.length > 1 || (nm.item ?? 0) > 0
+        q = it && (it.qty !== null || it.hs)
+          ? `Line ${(nm.item as number) + 1} has no product name (${esc([it.qty !== null ? `${fmtNum(it.qty)} units` : '', it.hs ? `HS ${it.hs}` : ''].filter(Boolean).join(', '))}). What is it?`
+          : this.b.items.length > 1 || (nm.item ?? 0) > 0
           ? 'What is the next product, and how many units? (e.g. "200 cotton t-shirts")'
           : 'What are you shipping? Tell me the product and how many units, e.g. "1,080 ceramic mugs at £5 each, 12 per carton".';
         break;

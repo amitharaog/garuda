@@ -37,6 +37,7 @@ function Cell({ id, field, value, version, act, item, label, style }: Omit<Field
     if (el.value === shown) return;
     const v = cellValue(field, el.value);
     if (v === undefined) { toast('Please enter a number'); el.value = shown; return; }
+    if (field === 'description' && v === '') { toast('Every line needs a product name; use ✕ to remove the line'); el.value = shown; return; }
     act.edit(field, v, item);
   };
   return (
