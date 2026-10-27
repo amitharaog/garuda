@@ -263,3 +263,9 @@ describe('a product line with no name', () => {
     expect(c.nextMissing()).toEqual({ field: 'unitPrice', item: 0 });
   });
 });
+
+it('a booking total before "gross weight" is not read as a product', () => {
+  const u = understand('90 cartons, declared value 3400, gross weight 285 kg.', { b: null, items: [], pending: null } as never);
+  expect(u.items).toEqual([]);
+  expect(understand('1,080 ceramic mugs at £5 each', { b: null, items: [], pending: null } as never).items).toEqual([{ qty: 1080, description: 'Ceramic mugs' }]);
+});

@@ -381,8 +381,8 @@ export function understand(text: string, ctx: UnderstandContext): Understood {
   }
 
   // ---- products: "<qty> <product>"
-  const STOP = /^(pallets?|plts?|cartons?|boxes|box|cases?|ctns?|kgs?|kilos?|g|grams?|days?|weeks?|units? per|per|gbp|pounds?|%|percent|tonnes?|t|of|am|pm|x|to|and|or|more|less|fewer|extra|digits?|hs|st|nd|rd|th|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december|hours?|mins?|minutes?|in|on|at|a|the)$/i;
-  const itemRe = /(?:^|[\s,;(])(\d[\d,]*)\s*(?:x\s+|units?\s+of\s+|pcs\s+of\s+|pieces\s+of\s+|packs?\s+of\s+)?([a-z][a-z0-9\-'/]*(?:\s+[a-z0-9][a-z0-9\-'/]*){0,5}?)(?=\s*(?:[,.;:)(]|\bat\b|@|\bfor\b|\beach\b|\bpriced\b|\bcosting\b|\bwhich\b|\bthat\b|\bweigh\w*\b|\bmade\b|\bhs\b|\bpacked\b|\bpack\b|\bin\b|\bwith\b|\band\b|\bfrom\b|\bto\b|\bon\b|\bsku\b|\bworth\b|\bvalued\b|$))/gi;
+  const STOP = /^(pallets?|plts?|cartons?|boxes|box|cases?|ctns?|kgs?|kilos?|g|grams?|days?|weeks?|units? per|per|gbp|pounds?|%|percent|tonnes?|t|of|am|pm|x|to|and|or|more|less|fewer|extra|digits?|hs|st|nd|rd|th|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december|hours?|mins?|minutes?|in|on|at|a|the|gross|net|total|declared|value|weight)$/i;
+  const itemRe = /(?:^|[\s,;(])(\d+(?:,\d{3})*)\s*(?:x\s+|units?\s+of\s+|pcs\s+of\s+|pieces\s+of\s+|packs?\s+of\s+)?([a-z][a-z0-9\-'/]*(?:\s+[a-z0-9][a-z0-9\-'/]*){0,5}?)(?=\s*(?:[,.;:)(]|\bat\b|@|\bfor\b|\beach\b|\bpriced\b|\bcosting\b|\bwhich\b|\bthat\b|\bweigh\w*\b|\bmade\b|\bhs\b|\bpacked\b|\bpack\b|\bin\b|\bwith\b|\band\b|\bfrom\b|\bto\b|\bon\b|\bsku\b|\bworth\b|\bvalued\b|$))/gi;
   for (const mm of [...lower().matchAll(itemRe)]) {
     const q = toNum(mm[1]);
     const noun = mm[2].trim();
