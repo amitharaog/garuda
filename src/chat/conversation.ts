@@ -63,6 +63,8 @@ interface Snapshot {
   itemsDone: boolean;
 }
 
+const FROM = { file: 'from your file', link: 'from a shared link', history: 'from your bookings' } as const;
+
 export class Conversation {
   b!: ChatBooking;
   stated!: { cartons: boolean; declaredValue: boolean };
@@ -74,7 +76,7 @@ export class Conversation {
   itemsDone = false;
   mode: 'chat' | 'file' = 'chat';
   /** Where an externally loaded booking came from. */
-  loadedFrom: 'file' | 'link' | null = null;
+  loadedFrom: 'file' | 'link' | 'history' | null = null;
   lastResult: CheckResult | null = null;
   reviewed = false;
   private suggest: { code: string; item: number } | null = null;
@@ -123,8 +125,8 @@ export class Conversation {
     return check(this.toBooking(), { carrierOverride: this.carrierOverride });
   }
 
-  /** Load a booking from an uploaded file so it can be fixed in chat. Values are kept exactly as written. */
-  loadBooking(b: Booking, opts: { carrierOverride?: string | null; confirmed?: string | null; source?: 'file' | 'link' } = {}): BotMessage[] {
+  /** Load a booking (from a file, a share link or My bookings) so it can be reviewed or fixed in chat. Values are kept exactly as written. */
+  loadBooking(b: Booking, opts: { carrierOverride?: string | null; confirmed?: string | null; source?: 'file' | 'link' | 'history' } = {}): BotMessage[] {
     this.reset();
     const copy = JSON.parse(JSON.stringify(b)) as Booking;
     this.b = { ...copy, items: copy.items.map(it => asChatItem(it)) };
@@ -138,7 +140,7 @@ export class Conversation {
     const r = this.result();
     this.lastResult = r;
     return [
-      text(`I've loaded <b>${esc(b.id)}</b> for <b>${esc(b.seller || 'this seller')}</b> ${opts.source === 'link' ? 'from a shared link' : 'from your file'}. Every value is kept exactly as ${opts.source === 'link' ? 'it was shared' : 'you wrote it'}.`),
+      text(`I've loaded <b>${esc(b.id)}</b> for <b>${esc(b.seller || 'this seller')}</b> ${FROM[opts.source || 'file']}. Every value is kept exactly as ${opts.source === 'link' ? 'it was shared' : opts.source === 'history' ? 'it was booked' : 'you wrote it'}.`),
       ...this.reviewMessages(r),
     ];
   }

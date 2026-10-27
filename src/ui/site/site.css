@@ -158,7 +158,8 @@ p.reveal .ru[data-s="0"] { color: rgba(17, 17, 17, .2); }
 @media (max-width: 767px) { .book-page { padding-top: 7rem; } .book-page .h1 { font-size: 2.6rem; } }
 @media (prefers-reduced-motion: reduce) { .book-page .console-head, .book-page main { animation: none; } }
 
-/* ---------- booking page: section tabs and booking modes ---------- */
+/* ---------- booking page: section tabs, booking modes, my bookings ---------- */
+.tab-count { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 7px; border-radius: 999px; background: var(--blue); color: var(--w); font-size: 10px; line-height: 1; vertical-align: 1px; }
 .book-modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; margin-bottom: 1.4rem; border: 1px solid var(--hair-l); }
 .book-modes button { display: flex; flex-direction: column; align-items: flex-start; gap: .3rem; padding: 1.1rem 1.3rem; background: var(--w); border: 0; text-align: left; cursor: pointer; color: var(--k); position: relative; transition: background-color .3s; }
 .book-modes button + button { border-left: 1px solid var(--hair-l); }
@@ -169,6 +170,18 @@ p.reveal .ru[data-s="0"] { color: rgba(17, 17, 17, .2); }
 .book-modes button:hover:not([aria-selected="true"]) { background: #f6f6f6; }
 @media (max-width: 767px) { .book-modes button { padding: .9rem; } .book-modes button b { font-size: .95rem; } .book-modes button span { display: none; } }
 a.btn { text-decoration: none; color: var(--k); }
+.btn.danger { background: #c42b2b; border-color: #c42b2b; color: var(--w); }
+.bookings-empty { padding: 2.4rem; display: flex; flex-direction: column; align-items: flex-start; gap: .8rem; }
+.bookings-empty h2 { font-size: 1.8rem; }
+.bookings-empty p { margin: 0 0 .6rem; max-width: 52ch; color: #444; }
+.bookings-bar { display: flex; gap: 12px; justify-content: space-between; align-items: center; flex-wrap: wrap; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.bookings-search { flex: 1; min-width: 220px; max-width: 420px; border: 1px solid transparent; background: var(--surface-2); border-radius: 999px; padding: 10px 16px; font-size: 14px; }
+.bookings-search:focus { outline: none; border-color: var(--k); background: var(--w); }
+.bookings-tbl { border: 0; border-radius: 0; }
+.bookings-tbl td { vertical-align: middle; white-space: nowrap; }
+.bookings-tbl td small { display: block; font-size: 11px; margin-top: 2px; }
+.row-actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: nowrap; }
+.bookings-note { padding: 10px 16px 14px; margin: 0; }
 
 /* ---------- page transition: a black circle grows from the centre, the page swaps, then it opens out ---------- */
 .wipe { position: fixed; inset: 0; z-index: 95; background: #000; pointer-events: none; clip-path: circle(0% at 50% 50%); visibility: hidden; }
